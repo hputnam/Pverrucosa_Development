@@ -1,4 +1,6 @@
 *.fastq.gz
 /Users/hputnam/MyProjects/Pverrucosa_Development/RAnalysis/data/ITS2/*.fastq.gz
 /Users/hputnam/MyProjects/Pverrucosa_Development/RAnalysis/data/swimming/swimming_videos
+/Users/hputnam/MyProjects/Pverrucosa_Development/RAnalysis/data/Tagseq_zymo_genohub/*.gff3
+/Users/hputnam/MyProjects/Pverrucosa_Development/RAnalysis/data/Tagseq_zymo_genohub/compare.annotated.gtf
 
