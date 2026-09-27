@@ -1,0 +1,4 @@
+*.fastq.gz
+/Users/hputnam/MyProjects/Pverrucosa_Development/RAnalysis/data/ITS2/*.fastq.gz
+/Users/hputnam/MyProjects/Pverrucosa_Development/RAnalysis/data/swimming/swimming_videos
+

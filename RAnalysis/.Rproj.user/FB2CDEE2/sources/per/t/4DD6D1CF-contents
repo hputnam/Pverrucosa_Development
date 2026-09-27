@@ -1,0 +1,806 @@
+---
+title: "GeneExpression"
+author: "HM Putnam"
+date: "4/24/2024"
+output: html_document
+---
+
+Install and Load Packages
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#library("tidyr")
+library("tidyverse")
+library("DESeq2")
+library("genefilter")
+library("RColorBrewer")
+library("pheatmap")
+library("viridis")
+library("ggplot2")
+library("goseq")
+library("strex")
+library("ggpubr")
+library("ggplotify")
+library("EnhancedVolcano")
+library("enrichplot")
+library("rrvgo")
+library("ggtree")
+library("tidytree")
+library("clusterProfiler")
+library("org.Ce.eg.db")
+library("GOSemSim")
+library("patchwork")
+library("colorspace")
+
+```
+
+#Read in Functional Annotation
+```{r}
+#read in annotation data file
+Annot <- readxl::read_xlsx("data/Tagseq_zymo_genohub/FileS2_Pver_gene_annot_May28.xlsx", skip=4) 
+
+#list gene names
+annot.genes <- as.data.frame(Annot$Gene)
+colnames(annot.genes)[1] <- "Gene"
+head(annot.genes)
+
+```
+
+#Read in data and metadata
+```{r}
+#read in metadata
+sample_ColData <- read.csv("data/Tagseq_zymo_genohub/Pverr_larvae_Seq_Sample_Info.csv", header=TRUE, sep=",")
+
+#generate a grouping variable
+sample_ColData$group <- paste0(sample_ColData$Stage,"_",sample_ColData$Temperature)
+
+#Read in data
+TranscriptCountData <- as.data.frame(read.csv(file= "data/Tagseq_zymo_genohub/Pverr_larvae_gene_count_matrix.csv", sep=",", header = TRUE))
+
+colnames(TranscriptCountData)[1] <- "Gene"
+
+# change Pver_novel_gene_ to Pver_novel_model_
+TranscriptCountData$Gene <- gsub("Pver_gene_novel_gene_", "Pver_novel_gene_", TranscriptCountData$Gene) #remove "_gene" from the new column
+
+#remove _gene_split_gene_
+TranscriptCountData$Gene <- gsub("Pver_gene_split_gene_", "Pver_gene_", TranscriptCountData$Gene)
+
+#remove everything after the - in split gene query name
+TranscriptCountData$Gene <- sub("\\-.*", "", TranscriptCountData$Gene)
+
+#Pver_gene_g14648_g14650
+#add a string before the second occurrence of a string
+# Use gsub to replace the pattern in the specific column
+TranscriptCountData$Gene <- gsub("(_gene_g[0-9]+)_g", "\\1_gene_g", TranscriptCountData$Gene)
+
+#Pver_gene_g16481_gene_g16482_g16480
+#add _gene before the third occurrence of _g
+TranscriptCountData$Gene[20630] <- "Pver_gene_g16481_gene_g16482_gene_g16480"
+
+#list gene names
+trans.genes <- (as.data.frame(TranscriptCountData$Gene))
+head(trans.genes)
+colnames(trans.genes)[1] <- "Gene"
+
+#check to see that all gene names in the counts data are also found in the annotation data
+missing.trans.genes<- dplyr::setdiff(trans.genes, annot.genes) 
+length(missing.trans.genes)
+
+missing.annot.genes<- dplyr::setdiff(annot.genes, trans.genes) 
+length(missing.annot.genes)
+
+#assign the first row of gene names as rownames
+rownames(TranscriptCountData) <- TranscriptCountData[,1]
+
+#remove gene names so only numeric counts data are in dataset
+TranscriptCountData <- TranscriptCountData[,-1]
+
+#view data
+head(TranscriptCountData)
+```
+#filtering values for PoverA
+```{r}
+
+#filter to larval stage
+TranscriptCountData <- TranscriptCountData[,c(5:12)]
+#filter sample metadata to larvae stage
+sample_ColData <- sample_ColData[c(5:12),]
+
+#set filter values for PoverA, P percent of the samples have counts over A
+filt <- filterfun(pOverA(0.5,10))
+
+#create filter for the counts data
+tfil <- genefilter(TranscriptCountData, filt)
+
+#identify transcripts to keep by count filter
+keep <- TranscriptCountData[tfil,]
+
+#identify transcript list
+gn.keep <- rownames(keep)
+
+#data filtered in PoverA, P percent of the samples have counts over A
+filt.count.mat <- as.matrix(TranscriptCountData[which(rownames(TranscriptCountData) %in% gn.keep),])
+
+#view data
+head(filt.count.mat)
+```
+
+#check count matrix sample name order (column order) and sample metadata order matches
+```{r}
+#assign tube ids as rownames in metadata
+rownames(sample_ColData) <- sample_ColData$Tube_ID
+
+#view sample names in data
+colnames(filt.count.mat) 
+
+#view sample names in metadata
+rownames(sample_ColData)
+
+# Check all sample IDs in sample_ColData are also in TranscriptCountData and match their orders
+all(rownames(sample_ColData) %in% colnames(filt.count.mat))  #Should return TRUE
+all(rownames(sample_ColData) == colnames(filt.count.mat))    #Should return TRUE
+
+#identify the treatment column levels
+sample_ColData$group <- factor(sample_ColData$group)
+
+#view levels
+levels(sample_ColData$group)
+
+```
+
+# Construct expression object
+```{r}
+#### Construct DESeq dataset from matrix
+data <- DESeqDataSetFromMatrix(countData = filt.count.mat, colData = sample_ColData, design = ~ group) #create a DESeqDataSet object
+
+
+#apply a regularized log transformation to minimize effects of small counts and normalize wrt library size
+rld <- rlog(data, blind=FALSE)
+head(assay(rld), 3) #view data
+
+#calculate distance matix
+sampleDists <- dist(t(assay(rld)))
+
+#distance matrix
+sampleDistMatrix <- as.matrix(sampleDists)
+
+#assign col names
+colnames(sampleDistMatrix) <- sample_ColData$group
+
+#assign colors
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+
+
+#### Plotting heatmap for Expression Visualization of all genes in each sample
+
+#pdf(file="Output/gene_expression_heatmap_all.pdf")
+pheatmap(sampleDistMatrix, #plot matrix of expression similarity
+         clustering_distance_rows=sampleDists, #cluster rows
+         clustering_distance_cols=sampleDists, #cluster columns
+         col=colors) #set colors
+#dev.off()
+
+#### Plotting PCA from Expression visualization
+
+#pdf(file="Output/PCA_all.pdf")
+plotPCA(rld, intgroup = c("group")) #plot PCA of samples with all data
+#dev.off()
+
+
+```
+
+
+
+# Differential Gene Expression Analysis
+```{r}
+#DESeq2 Test: test of the factor 
+
+#run differential expression test by group using the wald test
+DEG.int <- DESeq(data)
+
+#save DE results
+DEG.int.res <- results(DEG.int)
+
+# Volcano Plot (significance as a function of fold change)
+par(mar=c(5,5,5,5), cex=1.0, cex.main=1.4, cex.axis=1.4, cex.lab=1.4)
+topT <- as.data.frame(DEG.int.res)
+#Adjusted P values (FDR Q values)
+with(topT, plot(log2FoldChange, padj, pch=20, main="Volcano plot", cex=1.0, xlab=bquote(~Log[2]~fold~change), ylab=bquote(padj)))
+abline(h=0.05, col="black", lty=3, lwd=1.0)
+#Color the significant points with log2 fold change >2 red ()
+with(subset(topT, padj<0.05), points(log2FoldChange, padj, pch=20, col="red", cex=0.5))
+
+
+  EnhancedVolcano(DEG.int.res,
+    lab = rownames(DEG.int.res),
+    x = 'log2FoldChange',
+    y = 'pvalue')
+
+#view DE results
+resultsNames(DEG.int)
+
+# save log fold change information
+log2_changes <- DEG.int.res[,c(2,6)]
+
+#identify the number of significant p values with 5%FDR (padj<0.05)
+sig.num <- sum(DEG.int.res$padj <0.05, na.rm=T)
+
+#identify signficant pvalues with 5%FDR
+sig <- subset(DEG.int.res, padj<0.05,)
+
+#subset list of sig transcripts from original count data
+sig.list <- data[which(rownames(data) %in% rownames(sig)),]
+
+#save DEG list
+write.csv(counts(sig.list), file="output/DEG_05FDR.all.csv")
+
+#save DEG df — filter to significant results only
+res_df <- as.data.frame(DEG.int.res)
+res_df <- res_df %>% subset(padj<0.05)
+
+
+#subset upregulated at 31°C
+up.31.sig <- res_df %>%
+  subset(padj<0.05) %>%
+  subset(log2FoldChange>0) 
+
+#Sanity check on expression direction. 
+plotCounts(DEG.int, gene=rownames(up.31.sig)[1], intgroup="group") 
+
+#subset list of sig transcripts from original count data
+up.31.sig.list <- data[which(rownames(data) %in% rownames(up.31.sig)),]
+up.31.sig.list <- as.data.frame(counts(up.31.sig.list))
+
+#add annotation data
+up.31.sig.list$Gene <- rownames(up.31.sig.list)
+up.31.sig.list.annot <- left_join(up.31.sig.list, Annot,  by="Gene")
+
+#subset upregulated at 28°C
+up.28.sig <- res_df %>% 
+  subset(padj<0.05) %>%
+  subset(log2FoldChange<0) 
+
+#Sanity check on expression direction. 
+plotCounts(DEG.int, gene=rownames(up.28.sig)[1], intgroup="group") 
+
+#subset list of sig transcripts from original count data
+up.28.sig.list <- data[which(rownames(data) %in% rownames(up.28.sig)),]
+up.28.sig.list <- as.data.frame(counts(up.28.sig.list))
+
+#add annotation data
+up.28.sig.list$Gene <- rownames(up.28.sig.list)
+up.28.sig.list.annot <- left_join(up.28.sig.list, Annot,  by="Gene")
+
+
+```
+
+#Plotting Differentially Expressed Genes (DEGs) PCA
+```{r}
+#### Plotting DEG PCA
+
+# set site colors
+cols <- c("Larvae_31" = "red","Larvae_28" = "lightblue")
+
+# rlog transform data
+rsig <- rlog(sig.list, blind=FALSE)
+
+#Plot PCA of all samples for DEG only
+PCA.plot.auto <- plotPCA(rsig, intgroup = c("group"))
+#view plot
+PCA.plot.auto 
+
+#extract plotting data
+PC.info <-PCA.plot.auto$data 
+
+#plot PCA results
+#pdf(file="figures/Pverr_larvae_treatment_PCA.DEG.pdf")
+PCA.plot <- PC.info %>%
+ggplot(aes(x=PC1, y=PC2,color=group), group=group)+
+  geom_point(size=3)+
+  scale_color_manual(values=cols)+
+  #ylim(-15,15)+
+  #xlim(-35,35)+
+  xlab(paste0(PCA.plot.auto$labels$x[1]))+
+  ylab(paste0(PCA.plot.auto$labels$y[1]))+
+  theme_bw()+
+  theme(legend.position = c(0.8, 0.8),
+         text = element_text(size=15))
+PCA.plot 
+#dev.off()
+
+```
+#### Plotting DEG heatmap
+```{r}
+#### Plotting DEG heatmap
+
+#set group colors
+ann_colors = list(
+  group = c("Larvae_31" = "red","Larvae_28" = "lightblue"))
+
+#make matrix
+mat <- assay(rsig)
+
+#make dataframe
+df <- data.frame(colData(rsig)[c("group")])
+
+#plot heatmap by site
+#pdf("output/Pverr_larvae_Temperature_DEG_heaptmap_relative.pdf")
+Hmap <- pheatmap(mat, color=inferno(10), annotation_col = df, annotation_colors = ann_colors, clustering_method = "average", scale="row",  clustering_distance_rows="euclidean", show_rownames =F, fontsize_row=8, cluster_cols=T, show_colnames =F, gaps_col = c(5)) #plot heatmap of all DEG by group
+Hmap 
+#dev.off()
+
+```
+#Plotting PCA and Heatmap together
+```{r}
+#arrange plots
+DEplots <- ggarrange(PCA.plot, as.grob(Hmap), ncol=2, labels = c("A)","B)"))
+#save file
+ggsave("figures/Pverr_larvae_DEplots_Temperature.pdf", DEplots, width = 16, height=8)
+ggsave("figures/Pverr_larvae_DEplots_Temperature.png", DEplots, width = 16, height=8)
+```
+
+
+#Adding Annotation to DEGs
+```{r}
+#identify DEGs
+DEGs <- res_df
+#set gene name as rowname
+DEGs$Gene <- rownames(DEGs)
+#join counts and annotation
+Output <- left_join(DEGs,Annot,  by="Gene")
+#save file of annotated DEGs
+write.csv(Output,"output/31_vs_28_Larvae_Annotated_DEGS.csv")
+
+#separate short hit name from long name
+Output <- Output %>% separate(Hit_description, into = c("Hit_description1", "Hit_description2"),
+          sep = "\\(|\\)")
+
+#make a label name of hit name and gene ID
+Output$label <- paste0(Output$Hit_description1, " (", Output$Gene, ")")
+
+#remove the gene ID Pver_gene_ to leave the gene number
+Output$label <- gsub("Pver_gene_", "", Output$label)
+
+#make a data frame for annotation
+data2.labels <- data.frame(
+  x = c(14, 11),
+  y = c(6, -6),
+  padj=c(0,0),
+  text.lab = c("Higher at 31°C", "Higher at 28°C")
+  )
+
+#set the order of factors for labels
+Output$label <- factor(Output$label, levels = Output$label[order(Output$log2FoldChange)])
+
+
+#plot FC and pvalues
+pdf("figures/DEG_LFC_Larvae_Temperature_31v28.pdf", height = 12, width = 8)
+DEG_LFC_31v28 <- Output %>% arrange(log2FoldChange) %>%
+  ggplot(aes(x=label, y=log2FoldChange, colour=padj)) +
+  ylim(-10,10)+
+  geom_point(size=5)+
+  scale_colour_gradientn(colours = colorspace::heat_hcl(7))+
+  geom_segment(aes(x=label, xend=label, y=0, yend=log2FoldChange),linewidth=4) +
+  coord_flip()+
+  geom_vline(xintercept=12.5, linetype='dotted', col = 'black')+
+  annotate("text", x=11, y=-6, label="Higher at 28°C", col = 'black')+
+  annotate("text", x=14, y=6, label="Higher at 31°C", col = 'black')+
+  theme_classic() +
+  theme(legend.position = c(0.8, 0.1),
+        axis.title.y = element_blank(),
+        axis.title.x = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 40, face = "bold"))
+DEG_LFC_31v28
+dev.off()
+
+
+# DEGs higher at 31
+Output.Higher.31 <- Output %>%
+  subset(log2FoldChange>0)
+
+#set the order of factors for labels
+Output.Higher.31$label <- factor(Output.Higher.31$label, levels = Output.Higher.31$label[order(Output.Higher.31$log2FoldChange)])
+
+  
+#plot FC and pvalues
+pdf("figures/DEG_LFC_Larvae_Temperature_higher31.pdf", height = 12, width = 8)
+DEG_LFC_31 <- Output.Higher.31 %>% arrange(log2FoldChange) %>%
+  ggplot(aes(x=label, y=log2FoldChange, colour=padj)) +
+  ylim(0,10)+
+  geom_point(size=5)+
+  scale_colour_gradientn(colours = colorspace::heat_hcl(7))+
+  geom_segment(aes(x=label, xend=label, y=0, yend=log2FoldChange),linewidth=4) +
+  coord_flip()+
+  theme_classic() +
+  theme(legend.position = c(0.8, 0.1),
+        axis.title.y = element_blank(),
+        axis.title.x = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 40, face = "bold"))+
+  ggtitle('A')
+DEG_LFC_31
+dev.off()
+
+# DEGs higher at 28
+Output.Higher.28 <- Output %>%
+  subset(log2FoldChange<0)
+
+#set the order of factors for labels
+Output.Higher.28$label <- factor(Output.Higher.28$label, levels = Output.Higher.28$label[order(-Output.Higher.28$log2FoldChange)])
+
+  
+#plot FC and pvalues
+pdf("figures/DEG_LFC_Larvae_Temperature_higher28.pdf", height = 6, width = 8)
+DEG_LFC_28 <- Output.Higher.28 %>% arrange(log2FoldChange) %>%
+  ggplot(aes(x=label, y=-log2FoldChange, colour=padj)) +
+  ylim(0,10)+
+  geom_point(size=5)+
+  scale_colour_gradientn(colours = colorspace::heat_hcl(7))+
+  geom_segment(aes(x=label, xend=label, y=0, yend=-log2FoldChange),linewidth=4) +
+  coord_flip()+
+  theme_classic() +
+  theme(legend.position = c(0.8, 0.2),
+        axis.title.y = element_blank(),
+        axis.title.x = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 40, face = "bold"))+
+  ggtitle('B')
+  DEG_LFC_28
+dev.off()
+```
+
+# GO ENRICHMENT
+# Gene Length
+```{r}
+#read in the genome gff file
+calc.lengths <- read.table("data/Tagseq_zymo_genohub/Pver_genome_assembly_v1.0_modified.gff3", header=F)
+
+#filter to the mRNA
+calc.lengths <- calc.lengths %>% filter(V3=="gene")
+
+#calculate the length from the stop and start values
+calc.lengths$length <- calc.lengths$V5 - calc.lengths$V4
+
+#trim the IDs to the gene name only
+calc.lengths$V9 <- str_before_nth(calc.lengths$V9, "\\;", 1)
+calc.lengths$V9 <- gsub("ID=", "", calc.lengths$V9)
+calc.lengths$V9 <-  gsub("-.*","",calc.lengths$V9) #remove the extra g number after the dash
+
+# change Pver_novel_gene_ to Pver_novel_model_
+calc.lengths$V9 <- gsub("Pver_gene_novel_gene_", "Pver_novel_gene_", calc.lengths$V9) #remove "_gene" from the new column
+
+calc.lengths$V9 <- gsub("Pver_gene_split_gene_", "Pver_gene_", calc.lengths$V9)
+
+#Pver_gene_g14648_g14650
+#add a string before the second occurrence of a string
+# Use gsub to replace the pattern in the specific column
+calc.lengths$V9 <- gsub("(_gene_g[0-9]+)_g", "\\1_gene_g", calc.lengths$V9)
+
+#Pver_gene_g16481_gene_g16482_g16480
+#add _gene before the third occurrence of _g
+calc.lengths$V9[16445] <- "Pver_gene_g16481_gene_g16482_gene_g16480"
+
+
+#subset the dataframe to gene name and gene length
+calc.lengths <- calc.lengths[,c(9:10)]
+
+#rename the column
+colnames(calc.lengths)[1] <- "Gene"
+
+#list gene names
+gff.genes <- (as.data.frame(calc.lengths$Gene))
+head(gff.genes)
+colnames(gff.genes)[1] <- "Gene"
+
+missing.gff.genes<- dplyr::setdiff(gff.genes, annot.genes) 
+length(missing.gff.genes)
+```
+
+#GO enrichment of DEGs that are HIGHER IN EXPRESSION at 31
+```{r}
+#set the all transcripts list
+ALL<-row.names(filt.count.mat)
+
+#set the enrichment test list with the expressed filtered genes
+DEG <- as.character(row.names(up.31.sig.list)) #set the enrichment test list
+
+#set ID names
+#IDs <- row.names(TranscriptCountData) 
+
+#set length information
+LENGTH <-calc.lengths 
+
+#load GO terms for all genes in the genome
+GO.terms <-Annot[,c(2,13)]
+
+#split into multiple GO ids
+splitted <- strsplit(as.character(GO.terms$Gene_ontology_IDs), ";") 
+
+#list all GOs with each assigned gene
+GO.terms <- data.frame(v1 = rep.int(GO.terms$Gene, sapply(splitted, length)), v2 = unlist(splitted)) 
+
+#remove empty spaces before GO
+GO.terms$v2 <- gsub(" GO:", "GO:",GO.terms$v2) 
+
+#change contig lists to vectors
+ALL.vector <-c(t(ALL))
+DEG.vector <-c(t(DEG))
+ID.vector <- LENGTH$Gene
+LENGTH.vector <-LENGTH$length
+
+#Construct new vector with 1 for DEG and 0 for others
+gene.vector <-  as.integer(ID.vector%in%DEG.vector) 
+
+#set names
+names(gene.vector)=ID.vector 
+
+#weight vector by length of gene
+DEG.pwf<-nullp(gene.vector, ID.vector, bias.data=LENGTH.vector) 
+
+#identify enriched GO terms
+GO.wall<-goseq(DEG.pwf, ID.vector, gene2cat=GO.terms, test.cats=c("GO:CC", "GO:BP", "GO:MF"), method="Wallenius", use_genes_without_cat=TRUE)
+
+#How many enriched GO terms do we have
+class(GO.wall)
+head(GO.wall)
+tail(GO.wall)
+nrow(GO.wall)
+
+#Find only enriched GO terms that are statistically significant at chosen cutoff
+#include multiple comparison testing correction
+enriched.GO.05.a<- GO.wall$category[p.adjust(GO.wall$over_represented_pvalue, method = "BH") < .05]
+
+
+#format as dataframe
+enriched.GO.05<-data.frame(enriched.GO.05.a)
+
+#rename column
+colnames(enriched.GO.05) <- c("category")
+
+#include enrichment information for each category (GO Term)
+enriched.GO.05 <- left_join(enriched.GO.05, GO.wall, by="category")
+
+
+#subset the gene ontology results
+L31.MF.INT <- subset(enriched.GO.05, ontology=="MF")
+L31.MF.INT <- L31.MF.INT[order(L31.MF.INT$numDEInCat),]
+L31.CC.INT <- subset(enriched.GO.05, ontology=="CC")
+L31.CC.INT <- L31.CC.INT[order(L31.CC.INT$numDEInCat),]
+L31.BP.INT <- subset(enriched.GO.05, ontology=="BP")
+L31.BP.INT <- L31.BP.INT[order(L31.BP.INT$numDEInCat),]
+write.csv(enriched.GO.05, file = "output/TableS6_L31_upregDEG_Enriched_GO_Terms.csv")
+
+```
+
+#GO enrichment of DEGs that are HIGHER IN EXPRESSION at 28
+```{r}
+#set the all transcripts list
+ALL<-row.names(filt.count.mat)
+
+#set the enrichment test list with the expressed filtered genes
+DEG <- as.character(row.names(up.28.sig.list)) #set the enrichment test list
+
+#set ID names
+#IDs <- row.names(TranscriptCountData) 
+
+#set length information
+LENGTH <-calc.lengths 
+
+#load GO terms for all genes in the genome
+GO.terms <-Annot[,c(2,13)]
+
+#split into multiple GO ids
+splitted <- strsplit(as.character(GO.terms$Gene_ontology_IDs), ";") 
+
+#list all GOs with each assigned gene
+GO.terms <- data.frame(v1 = rep.int(GO.terms$Gene, sapply(splitted, length)), v2 = unlist(splitted)) 
+
+#remove empty spaces before GO
+GO.terms$v2 <- gsub(" GO:", "GO:",GO.terms$v2) 
+
+#change contig lists to vectors
+ALL.vector <-c(t(ALL))
+DEG.vector <-c(t(DEG))
+ID.vector <- LENGTH$Gene
+LENGTH.vector <-LENGTH$length
+
+#Construct new vector with 1 for DEG and 0 for others
+gene.vector <-  as.integer(ID.vector%in%DEG.vector) 
+
+#set names
+names(gene.vector)=ID.vector 
+
+#weight vector by length of gene
+DEG.pwf<-nullp(gene.vector, ID.vector, bias.data=LENGTH.vector) 
+
+#identify enriched GO terms
+GO.wall<-goseq(DEG.pwf, ID.vector, gene2cat=GO.terms, test.cats=c("GO:CC", "GO:BP", "GO:MF"), method="Wallenius", use_genes_without_cat=TRUE)
+
+#How many enriched GO terms do we have
+class(GO.wall)
+head(GO.wall)
+tail(GO.wall)
+nrow(GO.wall)
+
+#Find only enriched GO terms that are statistically significant at chosen cutoff
+#include multiple comparison testing correction
+enriched.GO.05.a<- GO.wall$category[p.adjust(GO.wall$over_represented_pvalue, method = "BH") < .05]
+
+#format as dataframe
+enriched.GO.05<-data.frame(enriched.GO.05.a)
+
+#rename column
+colnames(enriched.GO.05) <- c("category")
+
+#include enrichment information for each category (GO Term)
+enriched.GO.05 <- left_join(enriched.GO.05, GO.wall, by="category")
+
+L28.MF.INT <- subset(enriched.GO.05, ontology=="MF")
+L28.MF.INT <- L28.MF.INT[order(L28.MF.INT$numDEInCat),]
+L28.CC.INT <- subset(enriched.GO.05, ontology=="CC")
+L28.CC.INT <- L28.CC.INT[order(L28.CC.INT$numDEInCat),]
+L28.BP.INT <- subset(enriched.GO.05, ontology=="BP")
+L28.BP.INT <- L28.BP.INT[order(L28.BP.INT$numDEInCat),]
+write.csv(enriched.GO.05, file = "output/TableS7_L28_upregDEG_Enriched_GO_Terms.csv")
+
+```
+
+# combining plots
+# Combined figure: genes higher at 31°C with direct BP GO annotations
+# Note: GO enrichment returned 0 significant terms (only 46 DEGs — underpowered).
+# Terms shared by ≥2 genes are shown as a tile plot.
+```{r Temperature_DEG_GO_31}
+genes_31 <- up.31.sig.list.annot$Gene
+
+go_31_named <- Annot |>
+  dplyr::filter(Gene %in% genes_31) |>
+  dplyr::select(Gene, Gene_ontology_IDs) |>
+  tidyr::separate_rows(Gene_ontology_IDs, sep = ";") |>
+  dplyr::mutate(Gene_ontology_IDs = trimws(Gene_ontology_IDs)) |>
+  dplyr::filter(nchar(Gene_ontology_IDs) > 0) |>
+  dplyr::rename(category = Gene_ontology_IDs) |>
+  dplyr::left_join(GO.wall |> dplyr::select(category, term, ontology) |> dplyr::distinct(),
+                   by = "category") |>
+  dplyr::filter(ontology == "BP", !is.na(term))
+
+cat("Genes with BP annotations:", length(unique(go_31_named$Gene)), "/", length(genes_31), "\n")
+cat("Unique BP GO terms:", length(unique(go_31_named$term)), "\n")
+
+# Filter to terms shared by ≥2 genes to show patterns
+term_counts_31 <- go_31_named |>
+  dplyr::count(term) |>
+  dplyr::filter(n >= 2)
+cat("Terms shared by ≥2 genes:", nrow(term_counts_31), "\n")
+
+go_31_filt <- go_31_named |> dplyr::filter(term %in% term_counts_31$term)
+
+# Gene labels with short protein name and gene ID
+gene_labels_31 <- up.31.sig.list.annot |>
+  dplyr::mutate(
+    short_name = stringr::str_extract(Hit_description, "^[^(]+") |> trimws(),
+    short_name = stringr::str_trunc(short_name, 30),
+    label = paste0(short_name, " (", gsub("Pver_(gene_|novel_gene_)", "g", Gene), ")")
+  ) |>
+  dplyr::select(Gene, label) |>
+  dplyr::left_join(up.31.sig |> dplyr::mutate(Gene = rownames(up.31.sig)) |>
+                     dplyr::select(Gene, log2FoldChange), by = "Gene")
+
+# GO annotation tile plot
+tile_31 <- go_31_filt |>
+  dplyr::left_join(gene_labels_31, by = "Gene") |>
+  dplyr::filter(!is.na(label)) |>
+  ggplot(aes(x = stringr::str_wrap(term, 25),
+             y = reorder(label, log2FoldChange))) +
+  geom_tile(fill = "#C0392B", color = "white", linewidth = 0.3) +
+  scale_x_discrete(position = "top") +
+  labs(x = NULL, y = NULL) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 8, angle = 0, hjust = 0.5),
+        axis.text.y = element_text(size = 8),
+        panel.grid  = element_blank(),
+        plot.title  = element_text(size = 10, face = "bold"))
+
+# LFC lollipop — filter explicitly to padj < 0.05 to guard against session state
+lfc31_plot <- Output.Higher.31 |>
+  dplyr::filter(padj < 0.05) |>
+  dplyr::arrange(log2FoldChange) |>
+  ggplot(aes(x = label, y = log2FoldChange, colour = -log10(padj))) +
+  geom_segment(aes(x = label, xend = label, y = 0, yend = log2FoldChange), linewidth = 2) +
+  geom_point(size = 4) +
+  scale_color_viridis_c(option = "plasma", name = "-log10(padj)") +
+  labs(x = NULL, y = "log2 Fold Change\n(higher at 31°C)") +
+  theme_classic() +
+  theme(legend.position = c(0.05, 0.8),
+        axis.title.y    = element_text(size = 14, face = "bold"),
+        axis.title.x    = element_text(size = 14, angle = 45, face = "bold"),
+        axis.text.x = element_text(size = 10, angle = 45, hjust = 1, vjust = 1),
+        axis.text.y = element_text(size = 10))
+
+# Combined figure
+Temperature_DEG_GO_31 <- (lfc31_plot / free(tile_31)) +
+  plot_layout(heights = c(1.5, 1)) +
+  plot_annotation(tag_levels = "A")
+Temperature_DEG_GO_31
+
+ggsave("figures/Figure7_Temperature_DEG_GO_31.pdf", Temperature_DEG_GO_31, width = 22, height = 14)
+ggsave("figures/Figure7_Temperature_DEG_GO_31.png", Temperature_DEG_GO_31, width = 22, height = 14)
+```
+
+# Combined figure: genes higher at 28°C with direct BP GO annotations
+# Note: GO enrichment returned 0 significant terms (only 12 DEGs — underpowered).
+# Direct BP GO annotations for the 12 genes are shown as a tile plot instead.
+```{r Temperature_DEG_GO_28}
+# Get BP GO annotations for the 12 genes higher at 28°C
+genes_28 <- up.28.sig.list.annot$Gene
+
+go_28_named <- Annot |>
+  dplyr::filter(Gene %in% genes_28) |>
+  dplyr::select(Gene, Gene_ontology_IDs) |>
+  tidyr::separate_rows(Gene_ontology_IDs, sep = ";") |>
+  dplyr::mutate(Gene_ontology_IDs = trimws(Gene_ontology_IDs)) |>
+  dplyr::filter(nchar(Gene_ontology_IDs) > 0) |>
+  dplyr::rename(category = Gene_ontology_IDs) |>
+  dplyr::left_join(GO.wall |> dplyr::select(category, term, ontology) |> dplyr::distinct(),
+                   by = "category") |>
+  dplyr::filter(ontology == "BP", !is.na(term))
+
+cat("Unique BP GO terms across the 12 genes:", length(unique(go_28_named$term)), "\n")
+
+# Gene labels with short protein name and gene ID
+gene_labels_28 <- up.28.sig.list.annot |>
+  dplyr::mutate(
+    short_name = stringr::str_extract(Hit_description, "^[^(]+") |> trimws(),
+    short_name = stringr::str_trunc(short_name, 30),
+    label = paste0(short_name, " (", gsub("Pver_(gene_|novel_gene_)", "g", Gene), ")")
+  ) |>
+  dplyr::select(Gene, label) |>
+  dplyr::left_join(up.28.sig |> dplyr::mutate(Gene = rownames(up.28.sig)) |>
+                     dplyr::select(Gene, log2FoldChange), by = "Gene")
+
+# Filter to terms shared by ≥2 genes to match 31°C plot
+term_counts_28 <- go_28_named |>
+  dplyr::count(term) |>
+  dplyr::filter(n >= 2)
+cat("Terms shared by ≥2 genes:", nrow(term_counts_28), "\n")
+go_28_filt <- go_28_named |> dplyr::filter(term %in% term_counts_28$term)
+
+# GO annotation tile plot
+tile_28 <- go_28_filt |>
+  dplyr::left_join(gene_labels_28, by = "Gene") |>
+  dplyr::filter(!is.na(label)) |>
+  ggplot(aes(x = stringr::str_wrap(term, 25),
+             y = reorder(label, log2FoldChange))) +
+  geom_tile(fill = "steelblue", color = "white", linewidth = 0.3) +
+  scale_x_discrete(position = "top") +
+  labs(x = NULL, y = NULL) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 11, angle = 0, hjust = 0.5),
+        axis.text.y = element_text(size = 11),
+        panel.grid  = element_blank(),
+        plot.title  = element_text(size = 10, face = "bold"))
+
+# LFC lollipop plot
+lfc28_plot <- Output.Higher.28 |>
+  dplyr::filter(padj < 0.05) |>
+  dplyr::arrange(log2FoldChange) |>
+  ggplot(aes(x = label, y = -log2FoldChange, colour = -log10(padj))) +
+  geom_segment(aes(x = label, xend = label, y = 0, yend = -log2FoldChange), linewidth = 2) +
+  geom_point(size = 4) +
+  scale_color_viridis_c(option = "plasma", name = "-log10(padj)") +
+  labs(x = NULL, y = "log2 Fold Change\n(higher at 28°C)") +
+  theme_classic() +
+  theme(legend.position = "right",
+        axis.title.y = element_text(size = 14, face = "bold"),
+        axis.title.x = element_text(size = 14, angle = 45, face = "bold"),
+        axis.text.x = element_text(size = 8, angle = 45, hjust = 1, vjust = 1),
+        axis.text.y = element_text(size = 10))
+
+# Combined figure
+Temperature_DEG_GO_28 <- (lfc28_plot / free(tile_28)) +
+  plot_layout(heights = c(3, 2)) +
+  plot_annotation(tag_levels = "A")
+Temperature_DEG_GO_28
+
+ggsave("figures/Figure6_Temperature_DEG_GO_28.pdf", Temperature_DEG_GO_28, width = 12, height = 8)
+ggsave("figures/Figure6_Temperature_DEG_GO_28.png", Temperature_DEG_GO_28, width = 12, height = 8)
+```
+
+

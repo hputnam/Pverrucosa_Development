@@ -1,0 +1,28 @@
+{
+    "id": "4DD6D1CF",
+    "path": "~/MyProjects/Pverrucosa_Development/RAnalysis/scripts/4_Larval_GeneExpression_28_vs_31.Rmd",
+    "project_path": "scripts/4_Larval_GeneExpression_28_vs_31.Rmd",
+    "type": "r_markdown",
+    "hash": "1456135152",
+    "contents": "",
+    "dirty": false,
+    "created": 1790535889479.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "716,0",
+        "scrollLine": "699",
+        "working_dir": "project",
+        "last_setup_crc32": "c2353a7b2e7d7575"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1790551140,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1790551140248,
+    "read_only": false,
+    "read_only_alternatives": []
+}

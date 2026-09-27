@@ -1,0 +1,62 @@
+"0",""
+"0","ggsave(""figures/Figure5_GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.pdf"","
+"0","
+# bp_lar from existing session enriched.GO (larvae-up DEGs, BH < 0.01 from the script)
+bp_lar <- enriched.GO |>
+  dplyr::filter(ontology == ""BP"") |>
+  dplyr::mutate(padj       = p.adjust(over_represented_pvalue, method = ""BH""),
+                stage      = ""Larvae_28"",
+                gene_ratio = numDEInCat / numInCat)
+
+# Run embryo GO enrichment using session objects
+GO.terms.raw <- Annot[, c(2, 13)]
+splitted_go  <- strsplit(as.character(GO.terms.raw$Gene_ontology_IDs), "";"")
+GO.terms.bp  <- data.frame(v1 = rep.int(GO.terms.raw$Gene, sapply(splitted_go, length)),
+                            v2 = unlist(splitted_go))
+GO.terms.bp$v2 <- gsub("" GO:"", ""GO:"", GO.terms.bp$v2)
+
+ID.vector     <- calc.lengths$Gene
+LENGTH.vector <- calc.lengths$length
+
+DEG.emb.vec <- as.integer(ID.vector %in% as.character(up.EMB.sig.list$Gene))
+names(DEG.emb.vec) <- ID.vector
+DEG.pwf.emb <- nullp(DEG.emb.vec, ID.vector, bias.data = LENGTH.vector, plot.fit = FALSE)
+GO.wall.emb <- goseq(DEG.pwf.emb, ID.vector, gene2cat = GO.terms.bp,
+                     test.cats = c(""GO:CC"",""GO:BP"",""GO:MF""),
+                     method = ""Wallenius"", use_genes_without_cat = TRUE)
+
+bp_emb <- GO.wall.emb |>
+  dplyr::mutate(padj       = p.adjust(over_represented_pvalue, method = ""BH""),
+                stage      = ""Embryo_28"",
+                gene_ratio = numDEInCat / numInCat) |>
+  dplyr::filter(padj < 0.01, ontology == ""BP"")
+
+cat(""bp_lar BP terms:"", nrow(bp_lar), ""\n"")
+cat(""bp_emb BP terms:"", nrow(bp_emb), ""\n"")
+"
+"2","Warning in pcls(G) :"
+"2","
+ "
+"2"," initial point very close to some inequality constraints
+"
+"2","Using manually entered categories.
+"
+"2","Calculating the p-values...
+"
+"2","'select()' returned 1:1 mapping between keys and columns
+"
+"1","bp_lar BP terms:"
+"1"," "
+"1","33"
+"1"," "
+"1","
+"
+"1","bp_emb BP terms:"
+"1"," "
+"1","18"
+"1"," "
+"1","
+"
+"0","       bp_grouped_plot, width = 10, height = 14)"
+"0","ggsave(""figures/Figure5_GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.png"","
+"0","       bp_grouped_plot, width = 10, height = 14)"

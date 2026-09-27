@@ -1,0 +1,6 @@
+"0","#arrange plots"
+"0","DEplots <- ggarrange(PCA.plot, as.grob(Hmap), ncol=2, labels = c(""A)"",""B)""))"
+"0","#save file"
+"0","ggsave(""figures/Pverr_larvae_DEplots_Stage.pdf"", DEplots, width = 16, height=8)"
+"0","ggsave(""figures/Pverr_larvae_DEplots_Stage.png"", DEplots, width = 16, height=8)"
+"0",""

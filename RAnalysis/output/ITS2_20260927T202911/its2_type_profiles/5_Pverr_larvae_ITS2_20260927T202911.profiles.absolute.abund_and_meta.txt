@@ -1,0 +1,21 @@
+ITS2 type profile UID		40
+Clade		C
+Majority ITS2 sequence		C1d
+Associated species		None
+ITS2 profile abundance local		12
+ITS2 profile abundance DB		12
+ITS2 type profile		C1d-C42.2-C1-7850
+194	Pverr_111	21624.0
+193	Pverr_110	20090.0
+185	Pverr_006	13371.0
+189	Pverr_106	24600.0
+192	Pverr_109	16776.0
+187	Pverr_008	23760.0
+186	Pverr_007	26692.0
+196	Pverr_113	13034.0
+195	Pverr_112	18963.0
+188	Pverr_009	13723.0
+190	Pverr_107	34523.0
+191	Pverr_108	30402.0
+Sequence accession / SymPortal UID		1335-1332-380-7850
+Average defining sequence proportions and [stdev]		0.660[0.009]-0.241[0.008]-0.060[0.003]-0.039[0.002]

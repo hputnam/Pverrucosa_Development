@@ -1,0 +1,66 @@
+"0","
+# Rebuild bp_combined from real session data
+lar_parents <- reducedTerms.BP.LAR.plot |> dplyr::select(category, parentTerm)
+emb_parents <- reducedTerms.BP.EMB.plot |> dplyr::select(category, parentTerm)
+all_parents <- dplyr::bind_rows(lar_parents, emb_parents) |>
+  dplyr::distinct(category, .keep_all = TRUE)
+
+bp_combined <- dplyr::bind_rows(bp_emb, bp_lar) |>
+  dplyr::left_join(all_parents, by = ""category"") |>
+  dplyr::mutate(parentTerm = dplyr::if_else(is.na(parentTerm),
+                                             ""Other / not in OrgDb"", parentTerm))
+cat(""bp_combined rows:"", nrow(bp_combined), ""\n"")
+"
+"2","Error in dplyr::select(reducedTerms.BP.LAR.plot, category, parentTerm) : 
+  object 'reducedTerms.BP.LAR.plot' not found
+"
+"2","Error in expression 1 of 5: object 'reducedTerms.BP.LAR.plot' not found
+"
+"0","#identify DEGs"
+"0","DEGs <- res_df"
+"0","#set gene name as rowname"
+"0","DEGs$Gene <- rownames(DEGs)"
+"0","#join counts and annotation"
+"0","Output <- left_join(DEGs,Annot,  by=""Gene"")"
+"0","#save file of annotated DEGs"
+"0","write.csv(Output,""figures/TableS3_DEG_01FDR_emb_vs_lar_28.csv"")"
+"0",""
+"0","#separate short hit name from long name"
+"0","Output <- Output %>% separate(Hit_description, into = c(""Hit_description1"", ""Hit_description2""),"
+"0","          sep = ""\\(|\\)"")"
+"0",""
+"0","#make a label name of hit name and gene ID"
+"0","Output$label <- paste0(Output$Hit_description1, "" ("", Output$Gene, "")"")"
+"0",""
+"0","#remove the gene ID Pver_gene_ to leave the gene number"
+"0","Output$label <- gsub(""Pver_gene_"", """", Output$label)"
+"0",""
+"0","#set the order of factors for labels"
+"0","Output$label <- factor(Output$label, levels = Output$label[order(Output$log2FoldChange)])"
+"0",""
+"0","#make a data frame for annotation"
+"0","data2.labels <- data.frame("
+"0","  x = c(14, 11),"
+"0","  y = c(6, -6),"
+"0","  padj=c(0,0),"
+"0","  text.lab = c(""Higher in Embryos"", ""Higher in Larvae"")"
+"0","  )"
+"0",""
+"0","#plot fold change higher in larvae and higher in embryos"
+"0","#pdf(""figures/DEG_LFC_Larvae_Stage.pdf"", height = 12, width = 24)"
+"0","DEG_LFC <- Output %>% arrange(log2FoldChange) %>%"
+"0","  ggplot(aes(x=label, y=log2FoldChange, colour=padj)) +"
+"0","  #ylim(-10,10)+"
+"0","  geom_point(size=2)+"
+"0","  scale_colour_gradientn(colours = colorspace::heat_hcl(7))+"
+"0","  geom_segment(aes(x=label, xend=label, y=0, yend=log2FoldChange),linewidth=1) +"
+"0","  coord_flip()+"
+"0","  theme_classic() +"
+"0","  theme(legend.position = c(0.8, 0.1),"
+"0","        axis.title.y = element_blank(),"
+"0","        axis.title.x = element_text(size = 14, face = ""bold""),"
+"0","        plot.title = element_text(size = 40, face = ""bold""))+"
+"0","  ggtitle('A')"
+"0","#DEG_LFC"
+"0","#dev.off()"
+"0",""

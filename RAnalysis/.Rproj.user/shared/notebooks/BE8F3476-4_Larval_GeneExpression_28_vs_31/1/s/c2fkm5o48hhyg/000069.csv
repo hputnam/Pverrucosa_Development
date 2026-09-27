@@ -1,0 +1,2 @@
+"0","#Color the significant points with log2 fold change >2 red ()"
+"0","with(subset(topT, padj<0.05), points(log2FoldChange, padj, pch=20, col=""red"", cex=0.5))"

@@ -1,0 +1,854 @@
+---
+title: "GeneExpression"
+author: "HM Putnam"
+date: "4/24/2024"
+output: html_document
+---
+
+# Install and Load Packages
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library("tidyverse")
+library("DESeq2")
+library("genefilter")
+library("RColorBrewer")
+library("pheatmap")
+library("viridis")
+library("ggplot2")
+library("goseq")
+library("strex")
+library("ggpubr")
+library("ggplotify")
+library("EnhancedVolcano")
+library("enrichplot")
+library("rrvgo")
+library("ggtree")
+library("tidytree")
+library("clusterProfiler")
+library("org.Ce.eg.db")
+library("GOSemSim")
+library("patchwork")
+
+```
+
+#Read in Functional Annotation
+```{r}
+#read in annotation data file
+Annot <- readxl::read_xlsx("data/Tagseq_zymo_genohub/FileS2_Pver_gene_annot_May28.xlsx", skip=4) 
+
+#list gene names
+annot.genes <- as.data.frame(Annot$Gene)
+colnames(annot.genes)[1] <- "Gene"
+head(annot.genes)
+
+```
+
+#Read in data and metadata
+```{r}
+#read in metadata
+sample_ColData <- read.csv("data/Tagseq_zymo_genohub/Pverr_larvae_Seq_Sample_Info.csv", header=TRUE, sep=",")
+
+#generate a grouping variable
+sample_ColData$group <- paste0(sample_ColData$Stage,"_",sample_ColData$Temperature)
+
+#Read in data
+TranscriptCountData <- as.data.frame(read.csv(file= "data/Tagseq_zymo_genohub/Pverr_larvae_gene_count_matrix.csv", sep=",", header = TRUE))
+
+colnames(TranscriptCountData)[1] <- "Gene"
+
+# change Pver_novel_gene_ to Pver_novel_model_
+TranscriptCountData$Gene <- gsub("Pver_gene_novel_gene_", "Pver_novel_gene_", TranscriptCountData$Gene) #remove "_gene" from the new column
+
+#remove _gene_split_gene_
+TranscriptCountData$Gene <- gsub("Pver_gene_split_gene_", "Pver_gene_", TranscriptCountData$Gene)
+
+#remove everything after the - in split gene query name
+TranscriptCountData$Gene <- sub("\\-.*", "", TranscriptCountData$Gene)
+
+#Pver_gene_g14648_g14650
+#add a string before the second occurrence of a string
+# Use gsub to replace the pattern in the specific column
+TranscriptCountData$Gene <- gsub("(_gene_g[0-9]+)_g", "\\1_gene_g", TranscriptCountData$Gene)
+
+#Pver_gene_g16481_gene_g16482_g16480
+#add _gene before the third occurrence of _g
+TranscriptCountData$Gene[20630] <- "Pver_gene_g16481_gene_g16482_gene_g16480"
+
+#list gene names
+trans.genes <- (as.data.frame(TranscriptCountData$Gene))
+head(trans.genes)
+colnames(trans.genes)[1] <- "Gene"
+
+#check to see that all gene names in the counts data are also found in the annotation data
+missing.trans.genes<- dplyr::setdiff(trans.genes, annot.genes) 
+length(missing.trans.genes)
+
+missing.annot.genes<- dplyr::setdiff(annot.genes, trans.genes) 
+length(missing.annot.genes)
+
+#assign the first row of gene names as rownames
+rownames(TranscriptCountData) <- TranscriptCountData[,1]
+
+#remove gene names so only numeric counts data are in dataset
+TranscriptCountData <- TranscriptCountData[,-1]
+
+#view data
+head(TranscriptCountData)
+```
+
+#filtering values for PoverA
+```{r}
+
+#filter data to embryo and larval stages at 28°
+TranscriptCountData <- TranscriptCountData[,c(1:5,7,9,11)]
+
+#filter sample metadata to embryo and larval stages at 28°
+sample_ColData <- sample_ColData[c(1:5,7,9,11),]
+
+#set filter values for PoverA, P percent of the samples have counts over A
+filt <- filterfun(pOverA(0.5,10))
+
+#create filter for the counts data
+tfil <- genefilter(TranscriptCountData, filt)
+
+#identify transcripts to keep by count filter
+keep <- TranscriptCountData[tfil,]
+
+#identify transcript list
+gn.keep <- rownames(keep)
+
+#data filtered in PoverA, P percent of the samples have counts over A
+filt.count.mat <- as.matrix(TranscriptCountData[which(rownames(TranscriptCountData) %in% gn.keep),])
+
+#view data
+head(filt.count.mat)
+```
+
+#check count matrix sample name order (column order) and sample metadata order matches
+```{r}
+#assign tube ids as rownames in metadata
+rownames(sample_ColData) <- sample_ColData$Tube_ID
+
+#view sample names in data
+colnames(filt.count.mat) 
+
+#view sample names in metadata
+rownames(sample_ColData)
+
+# Check all sample IDs in sample_ColData are also in TranscriptCountData and match their orders
+all(rownames(sample_ColData) %in% colnames(filt.count.mat))  #Should return TRUE
+all(rownames(sample_ColData) == colnames(filt.count.mat))    #Should return TRUE
+
+#identify the treatment column levels
+sample_ColData$group <- factor(sample_ColData$group)
+
+#view levels
+levels(sample_ColData$group)
+
+```
+
+# Construct expression object
+```{r}
+#### Construct DESeq dataset from matrix
+data <- DESeqDataSetFromMatrix(countData = filt.count.mat, colData = sample_ColData, design = ~ group) #create a DESeqDataSet object
+
+#apply a regularized log transformation to minimize effects of small counts and normalize wrt library size
+rld <- rlog(data, blind=FALSE)
+
+#view data
+head(assay(rld), 3)
+
+#calculate distance matix
+sampleDists <- dist(t(assay(rld)))
+
+#distance matrix
+sampleDistMatrix <- as.matrix(sampleDists)
+
+#assign col names
+colnames(sampleDistMatrix) <- sample_ColData$group
+
+#assign colors
+colors <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+
+#### Plotting heatmap for Expression Visualization of all genes in each sample
+pheatmap(sampleDistMatrix, #plot matrix of expression similarity
+         clustering_distance_rows=sampleDists, #cluster rows
+         clustering_distance_cols=sampleDists, #cluster columns
+         col=colors) #set colors
+
+#### Plotting PCA from Expression visualization
+plotPCA(rld, intgroup = c("group")) #plot PCA of samples with all data
+
+```
+
+
+
+# Differential Gene Expression Analysis
+```{r}
+#DESeq2 Test: test of the factor 
+
+#run differential expression test by group using the wald test
+DEG.int <- DESeq(data)
+
+#save DE results
+DEG.int.res <- results(DEG.int)
+
+# Volcano Plot (significance as a function of fold change)
+par(mar=c(5,5,5,5), cex=1.0, cex.main=1.4, cex.axis=1.4, cex.lab=1.4)
+topT <- as.data.frame(DEG.int.res)
+#Adjusted P values (FDR Q values)
+with(topT, plot(log2FoldChange, padj, pch=20, main="Volcano plot", cex=1.0, xlab=bquote(~Log[2]~fold~change), ylab=bquote(padj)))
+abline(h=0.05, col="black", lty=3, lwd=1.0)
+#Color the significant points with log2 fold change >2 red ()
+with(subset(topT, padj<0.01), points(log2FoldChange, padj, pch=20, col="red", cex=0.5))
+
+
+  EnhancedVolcano(DEG.int.res,
+    lab = rownames(DEG.int.res),
+    x = 'log2FoldChange',
+    y = 'pvalue')
+
+#view DE results
+resultsNames(DEG.int)
+
+# save log fold change information
+log2_changes <- DEG.int.res[,c(2,6)]
+
+#identify the number of significant p values (padj<0.01)
+sig.num <- sum(DEG.int.res$padj <0.01, na.rm=T)
+
+#identify the genes with signficant pvalues 
+sig <- subset(DEG.int.res, padj<0.01,)
+
+#subset list of sig transcripts from original count data
+sig.list <- data[which(rownames(data) %in% rownames(sig)),]
+
+#save DEG list
+write.csv(counts(sig.list), file="output/DEG_01FDR_emb_vs_lar_28.csv")
+
+#save DEG df
+res_df <- as.data.frame(DEG.int.res)
+res_df <- res_df %>% 
+  subset(padj<0.01)
+
+#subset upregulated in Embryos
+up.EMB.sig <- res_df %>% 
+  subset(padj<0.01) %>%
+  subset(log2FoldChange<0) 
+
+#Sanity check on expression direction 
+plotCounts(DEG.int, gene=rownames(up.EMB.sig)[1], intgroup="group") 
+
+#subset list of sig transcripts from original count data
+up.EMB.sig.list <- data[which(rownames(data) %in% rownames(up.EMB.sig)),]
+up.EMB.sig.list <- as.data.frame(counts(up.EMB.sig.list))
+
+#add annotation data
+up.EMB.sig.list$Gene <- rownames(up.EMB.sig.list)
+up.EMB.sig.list.annot <- left_join(up.EMB.sig.list, Annot,  by="Gene")
+
+#subset upregulated at Larval stage
+up.LAR.sig <- res_df %>% 
+  subset(padj<0.01) %>%
+  subset(log2FoldChange>0) 
+
+#Sanity check on expression direction. 
+plotCounts(DEG.int, gene=rownames(up.LAR.sig)[1], intgroup="group") 
+
+#subset list of sig transcripts from original count data
+up.LAR.sig.list <- data[which(rownames(data) %in% rownames(up.LAR.sig)),]
+up.LAR.sig.list <- as.data.frame(counts(up.LAR.sig.list))
+
+#add annotation data
+up.LAR.sig.list$Gene <- rownames(up.LAR.sig.list)
+up.LAR.sig.list.annot <- left_join(up.LAR.sig.list, Annot,  by="Gene")
+
+
+```
+
+#Plotting Differentially Expressed Genes (DEGs) PCA
+```{r}
+#### Plotting DEG PCA
+
+# set group colors
+cols <- c("Embryo_28" = "coral","Larvae_28" = "lightblue")
+
+# rlog transform data
+rsig <- rlog(sig.list, blind=FALSE)
+
+#Plot PCA of all samples for DEG only
+PCA.plot.auto <- plotPCA(rsig, intgroup = c("group"))
+#view plot
+PCA.plot.auto 
+
+#extract plotting data
+PC.info <-PCA.plot.auto$data 
+
+#plot PCA results
+#pdf(file="figures/Pverr_larvae_stage_PCA.DEG.pdf")
+PCA.plot <- PC.info %>%
+ggplot(aes(x=PC1, y=PC2,color=group), group=group)+
+  geom_point(size=3)+
+  scale_color_manual(values=cols)+
+  xlab(paste0(PCA.plot.auto$labels$x[1]))+
+  ylab(paste0(PCA.plot.auto$labels$y[1]))+
+  theme_bw()+
+  theme(legend.position = c(0.8, 0.4),
+         text = element_text(size=15))
+PCA.plot 
+#dev.off()
+
+```
+#### Plotting DEG heatmap
+```{r}
+#### Plotting DEG heatmap
+
+# set group colors
+ann_colors = list(
+  group = c("Embryo_28" = "coral","Larvae_28" = "lightblue"))
+
+#make an expression object
+mat <- assay(rsig)#
+
+#make dataframe
+df <- data.frame(colData(rsig)[c("group")])
+
+#plot heatmap by stage
+#pdf("output/Pverr_larvae_Stage_DEG_heatmap_relative.pdf")
+Hmap <- pheatmap(mat, color=inferno(10), annotation_col = df, annotation_colors = ann_colors, clustering_method = "average", scale="row",  clustering_distance_rows="euclidean", show_rownames =F, fontsize_row=8, cluster_cols=T, show_colnames =T, gaps_col = c(5)) #plot heatmap of all DEG by group
+Hmap 
+#dev.off()
+
+```
+#Plotting PCA and Heatmap together
+```{r}
+#arrange plots
+DEplots <- ggarrange(PCA.plot, as.grob(Hmap), ncol=2, labels = c("A)","B)"))
+#save file
+ggsave("figures/Pverr_larvae_DEplots_Stage.pdf", DEplots, width = 16, height=8)
+ggsave("figures/Pverr_larvae_DEplots_Stage.png", DEplots, width = 16, height=8)
+
+```
+
+
+#Adding Annotation to DEGs
+```{r}
+#identify DEGs
+DEGs <- res_df
+#set gene name as rowname
+DEGs$Gene <- rownames(DEGs)
+#join counts and annotation
+Output <- left_join(DEGs,Annot,  by="Gene")
+#save file of annotated DEGs
+write.csv(Output,"figures/TableS3_DEG_01FDR_emb_vs_lar_28.csv")
+
+#separate short hit name from long name
+Output <- Output %>% separate(Hit_description, into = c("Hit_description1", "Hit_description2"),
+          sep = "\\(|\\)")
+
+#make a label name of hit name and gene ID
+Output$label <- paste0(Output$Hit_description1, " (", Output$Gene, ")")
+
+#remove the gene ID Pver_gene_ to leave the gene number
+Output$label <- gsub("Pver_gene_", "", Output$label)
+
+#set the order of factors for labels
+Output$label <- factor(Output$label, levels = Output$label[order(Output$log2FoldChange)])
+
+#make a data frame for annotation
+data2.labels <- data.frame(
+  x = c(14, 11),
+  y = c(6, -6),
+  padj=c(0,0),
+  text.lab = c("Higher in Embryos", "Higher in Larvae")
+  )
+
+#plot fold change higher in larvae and higher in embryos
+#pdf("figures/DEG_LFC_Larvae_Stage.pdf", height = 12, width = 24)
+DEG_LFC <- Output %>% arrange(log2FoldChange) %>%
+  ggplot(aes(x=label, y=log2FoldChange, colour=padj)) +
+  #ylim(-10,10)+
+  geom_point(size=2)+
+  scale_colour_gradientn(colours = colorspace::heat_hcl(7))+
+  geom_segment(aes(x=label, xend=label, y=0, yend=log2FoldChange),linewidth=1) +
+  coord_flip()+
+  theme_classic() +
+  theme(legend.position = c(0.8, 0.1),
+        axis.title.y = element_blank(),
+        axis.title.x = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 40, face = "bold"))+
+  ggtitle('A')
+#DEG_LFC
+#dev.off()
+
+```
+# GO ENRICHMENT
+# calculate Gene Length
+```{r}
+#read in the genome gff file
+calc.lengths <- read.table("data/Tagseq_zymo_genohub/Pver_genome_assembly_v1.0_modified.gff3", header=F)
+
+#filter to the mRNA
+calc.lengths <- calc.lengths %>% filter(V3=="gene")
+
+#calculate the length from the stop and start values
+calc.lengths$length <- calc.lengths$V5 - calc.lengths$V4
+
+#trim the IDs to the gene name only
+calc.lengths$V9 <- str_before_nth(calc.lengths$V9, "\\;", 1)
+calc.lengths$V9 <- gsub("ID=", "", calc.lengths$V9)
+calc.lengths$V9 <-  gsub("-.*","",calc.lengths$V9) #remove the extra g number after the dash
+
+# change Pver_novel_gene_ to Pver_novel_model_
+calc.lengths$V9 <- gsub("Pver_gene_novel_gene_", "Pver_novel_gene_", calc.lengths$V9) #remove "_gene" from the new column
+
+calc.lengths$V9 <- gsub("Pver_gene_split_gene_", "Pver_gene_", calc.lengths$V9)
+
+#Pver_gene_g14648_g14650
+#add a string before the second occurrence of a string
+# Use gsub to replace the pattern in the specific column
+calc.lengths$V9 <- gsub("(_gene_g[0-9]+)_g", "\\1_gene_g", calc.lengths$V9)
+
+#Pver_gene_g16481_gene_g16482_g16480
+#add _gene before the third occurrence of _g
+calc.lengths$V9[16445] <- "Pver_gene_g16481_gene_g16482_gene_g16480"
+
+
+#subset the dataframe to gene name and gene length
+calc.lengths <- calc.lengths[,c(9:10)]
+
+#rename the column
+colnames(calc.lengths)[1] <- "Gene"
+
+#list gene names
+gff.genes <- (as.data.frame(calc.lengths$Gene))
+head(gff.genes)
+colnames(gff.genes)[1] <- "Gene"
+
+missing.gff.genes<- dplyr::setdiff(gff.genes, annot.genes) 
+length(missing.gff.genes)
+```
+
+#GO enrichment of DEGs that are HIGHER IN EXPRESSION in Larvae
+```{r}
+#set the all transcripts list
+ALL<-row.names(filt.count.mat)
+
+#set the enrichment test list with the expressed filtered genes
+DEG <- as.character(up.LAR.sig.list$Gene) 
+
+#set ID names
+#IDs <- row.names(data) 
+
+#set length information
+LENGTH <-calc.lengths 
+
+#load GO terms for all genes in the genome
+GO.terms <-Annot[,c(2,13)]
+
+#split into multiple GO ids
+splitted <- strsplit(as.character(GO.terms$Gene_ontology_IDs), ";") 
+
+#list all GOs with each assigned gene
+GO.terms <- data.frame(v1 = rep.int(GO.terms$Gene, sapply(splitted, length)), v2 = unlist(splitted)) 
+
+#remove empty spaces before GO
+GO.terms$v2 <- gsub(" GO:", "GO:",GO.terms$v2) 
+
+#change contig lists to vectors
+ALL.vector <-c(t(ALL))
+DEG.vector <-c(t(DEG))
+ID.vector <- LENGTH$Gene
+LENGTH.vector <-LENGTH$length
+
+#Construct new vector with 1 for DEG and 0 for others
+gene.vector <-  as.integer(ID.vector%in%DEG.vector) 
+
+#set names
+names(gene.vector)=ID.vector 
+
+#weight vector by length of gene
+DEG.pwf<-nullp(gene.vector, ID.vector, bias.data=LENGTH.vector) 
+
+#identify enriched GO terms
+GO.wall<-goseq(DEG.pwf, ID.vector, gene2cat=GO.terms, test.cats=c("GO:CC", "GO:BP", "GO:MF"), method="Wallenius", use_genes_without_cat=TRUE)
+
+#How many enriched GO terms do we have
+class(GO.wall)
+head(GO.wall)
+tail(GO.wall)
+nrow(GO.wall)
+
+#Find only enriched GO terms that are statistically significant at chosen cutoff
+#include multiple comparison testing correction
+enriched.GO<- GO.wall$category[p.adjust(GO.wall$over_represented_pvalue, method = "BH") < .01]
+
+#format as dataframe
+enriched.GO<-data.frame(enriched.GO)
+
+#rename column
+colnames(enriched.GO) <- c("category")
+
+#include enrichment information for each category (GO Term)
+enriched.GO <- left_join(enriched.GO, GO.wall, by="category")
+
+
+#subset the gene ontology results
+LAR.MF.INT <- subset(enriched.GO, ontology=="MF")
+#order by the number in category
+LAR.MF.INT <- LAR.MF.INT[order(LAR.MF.INT$numDEInCat),]
+#subset the Cellular Components
+LAR.CC.INT <- subset(enriched.GO, ontology=="CC")
+#order by the number in category
+LAR.CC.INT <- LAR.CC.INT[order(LAR.CC.INT$numDEInCat),]
+#subset the Biological Processes
+LAR.BP.INT <- subset(enriched.GO, ontology=="BP")
+#order by the number in category
+LAR.BP.INT <- LAR.BP.INT[order(LAR.BP.INT$numDEInCat),]
+
+
+```
+
+#Plotting BP enriched in DEGS up.LAR.sig.list
+```{r}
+# similarity of GO terms in the DEG list for BP
+simMatrix <- calculateSimMatrix(LAR.BP.INT$category,
+                                orgdb="org.Ce.eg.db",
+                                ont=c("BP"),
+                                method="Rel")
+
+#scoring sig enriched terms by pvalue
+scores <- setNames(-log(LAR.BP.INT$over_represented_pvalue), LAR.BP.INT$category)
+
+#reducing sig enriched terms to higher order terms and grouping them together by a threshold value
+# and weighting them by scores of pvalue
+#higher thresholds result in fewer groups
+reducedTerms.BP.LAR <- reduceSimMatrix(simMatrix,
+                                scores,
+                                threshold=0.9,
+                                orgdb="org.Ce.eg.db")
+colnames(reducedTerms.BP.LAR)[1] <- "category"
+
+pdf("figures/BP_DEGS_Up_in_Larvae_vs_Emb_Enriched_GOTerms_semsim.pdf", width = 18, height = 8)
+treemapPlot(reducedTerms.BP.LAR, force.print.labels=T)
+dev.off()
+```
+#Plotting MF enriched in DEGS up.LAR.sig.list
+```{r}
+# similarity of GO terms in the DEG list for BP
+simMatrix <- calculateSimMatrix(LAR.MF.INT$category,
+                                orgdb="org.Ce.eg.db",
+                                ont=c("MF"),
+                                method="Rel")
+
+#scoring sig enriched terms by pvalue
+scores <- setNames(-log(LAR.MF.INT$over_represented_pvalue), LAR.MF.INT$category)
+
+#reducing sig enriched terms to higher order terms and grouping them together by a threshold value
+# and weighting them by scores of pvalue
+#higher thresholds result in fewer groups
+reducedTerms.MF.LAR <- reduceSimMatrix(simMatrix,
+                                scores,
+                                threshold=0.9,
+                                orgdb="org.Ce.eg.db")
+colnames(reducedTerms.MF.LAR)[1] <- "category"
+
+pdf("figures/MF_DEGS_Up_in_Larvae_vs_Emb_Enriched_GOTerms_semsim.pdf", width = 18, height = 8)
+treemapPlot(reducedTerms.MF.LAR, force.print.labels=T)
+dev.off()
+```
+
+
+
+# Comparative dot plot: enriched GO terms in Embryo-up vs Larvae-up DEGs
+```{r comparative_dotplot}
+# Run GO enrichment for larval-upregulated DEGs
+DEG.lar.vector <- as.integer(ID.vector %in% as.character(up.LAR.sig.list$Gene))
+names(DEG.lar.vector) <- ID.vector
+DEG.pwf.lar <- nullp(DEG.lar.vector, ID.vector, bias.data = LENGTH.vector, plot.fit = FALSE)
+GO.wall.lar <- goseq(DEG.pwf.lar, ID.vector, gene2cat = GO.terms,
+                     test.cats = c("GO:CC", "GO:BP", "GO:MF"),
+                     method = "Wallenius", use_genes_without_cat = TRUE)
+
+
+
+# Extract BH-adjusted larval results
+enriched.lar.plot <- GO.wall.lar |>
+  mutate(padj       = p.adjust(over_represented_pvalue, method = "BH"),
+         stage      = "Larvae_28",
+         gene_ratio = numDEInCat / numInCat) |>
+  filter(padj < 0.01, !is.na(ontology))
+
+write.csv(enriched.lar.plot , file = "figures/TableS4_LAR_upregDEG_Enriched_GO_Terms.csv")
+
+# Run GO enrichment for embryo-upregulated DEGs
+DEG.emb.vector <- as.integer(ID.vector %in% as.character(up.EMB.sig.list$Gene))
+names(DEG.emb.vector) <- ID.vector
+DEG.pwf.emb <- nullp(DEG.emb.vector, ID.vector, bias.data = LENGTH.vector, plot.fit = FALSE)
+GO.wall.emb <- goseq(DEG.pwf.emb, ID.vector, gene2cat = GO.terms,
+                     test.cats = c("GO:CC", "GO:BP", "GO:MF"),
+                     method = "Wallenius", use_genes_without_cat = TRUE)
+
+enriched.emb.plot <- GO.wall.emb |>
+  mutate(padj       = p.adjust(over_represented_pvalue, method = "BH"),
+         stage      = "Embryo_28",
+         gene_ratio = numDEInCat / numInCat) |>
+  filter(padj < 0.01, !is.na(ontology))
+
+write.csv(enriched.emb.plot , file = "figures/TableS5_EMB_upregDEG_Enriched_GO_Terms.csv")
+
+
+cat("Enriched GO terms up in Embryo:", nrow(enriched.emb.plot), "\n")
+cat("Enriched GO terms up in Larvae:", nrow(enriched.lar.plot), "\n")
+
+# Top 10 terms per stage per ontology by padj
+top_terms <- bind_rows(enriched.emb.plot, enriched.lar.plot) |>
+  group_by(stage, ontology) |>
+  slice_min(order_by = padj, n = 10) |>
+  ungroup()
+
+# Expand to all stage x term combinations so missing terms show as empty space
+term_meta <- top_terms |> distinct(term, ontology)
+plot_df <- expand.grid(
+    term  = unique(top_terms$term),
+    stage = c("Embryo_28", "Larvae_28"),
+    stringsAsFactors = FALSE
+  ) |>
+  left_join(term_meta, by = "term") |>
+  left_join(
+    bind_rows(enriched.emb.plot, enriched.lar.plot) |>
+      dplyr::select(term, stage, numDEInCat, gene_ratio, padj),
+    by = c("term", "stage")
+  )
+
+# Plot
+dotplot <- ggplot(plot_df,
+    aes(x     = stage,
+        y     = reorder(term, gene_ratio, FUN = max, na.rm = TRUE),
+        size  = numDEInCat,
+        color = -log10(padj))) +
+  geom_point(na.rm = TRUE) +
+  scale_color_viridis_c(option = "plasma", name = "-log10(padj)") +
+  scale_size_continuous(name = "DEG count", range = c(1, 8)) +
+  facet_wrap(~ ontology, scales = "free_y", ncol = 3) +
+  labs(x = NULL, y = NULL,
+       title = "Enriched GO Terms: Embryo vs Larvae (28°C)") +
+  theme_bw() +
+  theme(axis.text.y      = element_text(size = 7),
+        axis.text.x      = element_text(size = 10),
+        strip.background = element_rect(fill = "grey90"),
+        legend.position  = "bottom",
+        panel.grid       = element_blank())
+dotplot
+
+```
+
+# Comparative dot plot: BP GO terms grouped by rrvgo parent term
+```{r bp_grouped_dotplot}
+# Filter to BP only
+bp_emb <- enriched.emb.plot |> dplyr::filter(ontology == "BP")
+bp_lar <- enriched.lar.plot |> dplyr::filter(ontology == "BP")
+cat("BP terms - Embryo:", nrow(bp_emb), "| Larvae:", nrow(bp_lar), "\n")
+
+# Compute rrvgo parent term assignments for both stages
+# Note: reducedTerms.BP.LAR already computed above; rerun here on bp_lar to ensure alignment
+simMatrix.BP.LAR.plot <- calculateSimMatrix(bp_lar$category,
+                                            orgdb  = "org.Ce.eg.db",
+                                            ont    = "BP",
+                                            method = "Rel")
+scores.BP.LAR.plot <- setNames(-log(bp_lar$over_represented_pvalue), bp_lar$category)
+reducedTerms.BP.LAR.plot <- reduceSimMatrix(simMatrix.BP.LAR.plot, scores.BP.LAR.plot,
+                                            threshold = 0.9, orgdb = "org.Ce.eg.db")
+colnames(reducedTerms.BP.LAR.plot)[1] <- "category"
+
+simMatrix.BP.EMB.plot <- calculateSimMatrix(bp_emb$category,
+                                            orgdb  = "org.Ce.eg.db",
+                                            ont    = "BP",
+                                            method = "Rel")
+scores.BP.EMB.plot <- setNames(-log(bp_emb$over_represented_pvalue), bp_emb$category)
+reducedTerms.BP.EMB.plot <- reduceSimMatrix(simMatrix.BP.EMB.plot, scores.BP.EMB.plot,
+                                            threshold = 0.9, orgdb = "org.Ce.eg.db")
+colnames(reducedTerms.BP.EMB.plot)[1] <- "category"
+
+# Union parent assignments — larvae takes precedence for shared terms;
+# terms not covered by org.Ce.eg.db are labelled "Other / not in OrgDb"
+all_parents <- dplyr::bind_rows(
+    reducedTerms.BP.LAR.plot |> dplyr::select(category, parentTerm),
+    reducedTerms.BP.EMB.plot |> dplyr::select(category, parentTerm)
+  ) |>
+  dplyr::distinct(category, .keep_all = TRUE)
+
+bp_combined <- dplyr::bind_rows(bp_emb, bp_lar) |>
+  dplyr::left_join(all_parents, by = "category") |>
+  dplyr::mutate(parentTerm = dplyr::if_else(is.na(parentTerm),
+                                             "Other / not in OrgDb", parentTerm))
+
+# Y-axis order: group by parent term, sort within by gene_ratio descending
+term_order <- bp_combined |>
+  dplyr::arrange(parentTerm, dplyr::desc(gene_ratio)) |>
+  dplyr::distinct(term, parentTerm) |>
+  dplyr::mutate(y_pos = dplyr::row_number())
+
+# Background rectangle data (one per parent group)
+rect_df <- term_order |>
+  dplyr::group_by(parentTerm) |>
+  dplyr::summarise(ymin  = min(y_pos) - 0.5,
+                   ymax  = max(y_pos) + 0.5,
+                   y_mid = (min(y_pos) + max(y_pos)) / 2,
+                   .groups = "drop") |>
+  dplyr::arrange(ymin)
+
+# Color palette — one color per parent group
+parent_cols <- colorRampPalette(c(brewer.pal(8, "Dark2"), brewer.pal(9, "Set1")))(nrow(rect_df))
+names(parent_cols) <- rect_df$parentTerm
+
+# Plot data — numeric x positions (1 = Embryo, 2 = Larvae)
+bp_plot_df <- bp_combined |>
+  dplyr::left_join(term_order |> dplyr::select(term, y_pos), by = "term") |>
+  dplyr::mutate(x_pos = dplyr::if_else(stage == "Embryo_28", 1L, 2L))
+
+bp_grouped_plot <- ggplot() +
+  geom_rect(data = rect_df,
+            aes(xmin = 0.5, xmax = 2.5, ymin = ymin, ymax = ymax),
+            fill      = NA,
+            color     = "gray",#parent_cols[rect_df$parentTerm],
+            linewidth = 0.6) +
+  geom_text(data = rect_df,
+            aes(x = 0.35, y = y_mid,
+                label = stringr::str_wrap(parentTerm, width = 30)),
+            hjust = 1, size = 3.5, fontface = "italic", lineheight = 0.85) +
+  geom_point(data = bp_plot_df,
+             aes(x = x_pos, y = y_pos,
+                 size = numDEInCat, color = -log10(padj)),
+             na.rm = TRUE) +
+  scale_color_viridis_c(option = "plasma", name = "-log10(padj)") +
+  scale_size_continuous(name = "DEG count", range = c(1, 7)) +
+  scale_x_continuous(breaks = c(1, 2),
+                     labels = c("Embryos", "Larvae"),
+                     position = "top") +
+  scale_y_continuous(breaks = term_order$y_pos,
+                     labels = term_order$term,
+                     expand = c(0.01, 0.01),
+                     position = "right") +
+  labs(x = NULL, y = NULL) +
+  coord_cartesian(xlim = c(0.5, 2.5), clip = "off") +
+  theme_bw() +
+  theme(axis.text.y        = element_text(size = 6),
+        axis.text.x        = element_text(size = 14, face = "bold"),
+        panel.border       = element_blank(),
+        panel.grid         = element_blank(),
+        legend.position  = "bottom",
+        plot.margin        = margin(5, 5, 5, 220))
+bp_grouped_plot
+
+ggsave("figures/Figure5_GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.pdf",
+       bp_grouped_plot, width = 10, height = 14)
+ggsave("figures/Figure5_GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.png",
+       bp_grouped_plot, width = 10, height = 14)
+```
+
+# Two-panel version: embryo and larvae as separate panels
+```{r bp_two_panel}
+# Shared color limits across both panels for direct comparison
+color_limits <- range(-log10(bp_combined$padj), na.rm = TRUE)
+
+# --- Embryo panel data ---
+bp_emb_only <- bp_combined |> dplyr::filter(stage == "Embryo_28")
+
+term_order_emb <- bp_emb_only |>
+  dplyr::arrange(parentTerm, dplyr::desc(gene_ratio)) |>
+  dplyr::distinct(term, parentTerm) |>
+  dplyr::mutate(y_pos = dplyr::row_number())
+
+rect_df_emb <- term_order_emb |>
+  dplyr::group_by(parentTerm) |>
+  dplyr::summarise(ymin  = min(y_pos) - 0.5,
+                   ymax  = max(y_pos) + 0.5,
+                   y_mid = (min(y_pos) + max(y_pos)) / 2,
+                   .groups = "drop") |>
+  dplyr::arrange(ymin)
+
+bp_emb_plotdf <- bp_emb_only |>
+  dplyr::left_join(term_order_emb |> dplyr::select(term, y_pos), by = "term")
+
+# --- Larvae panel data ---
+bp_lar_only <- bp_combined |> dplyr::filter(stage == "Larvae_28")
+
+term_order_lar <- bp_lar_only |>
+  dplyr::arrange(parentTerm, dplyr::desc(gene_ratio)) |>
+  dplyr::distinct(term, parentTerm) |>
+  dplyr::mutate(y_pos = dplyr::row_number())
+
+rect_df_lar <- term_order_lar |>
+  dplyr::group_by(parentTerm) |>
+  dplyr::summarise(ymin  = min(y_pos) - 0.5,
+                   ymax  = max(y_pos) + 0.5,
+                   y_mid = (min(y_pos) + max(y_pos)) / 2,
+                   .groups = "drop") |>
+  dplyr::arrange(ymin)
+
+bp_lar_plotdf <- bp_lar_only |>
+  dplyr::left_join(term_order_lar |> dplyr::select(term, y_pos), by = "term")
+
+# Shared theme for both panels
+panel_theme <- theme_bw() +
+  theme(axis.text.y  = element_text(size = 10),
+        axis.text.x  = element_text(size = 20, face = "bold"),
+        panel.border = element_blank(),
+        panel.grid   = element_blank(),
+        plot.margin  = margin(5, 5, 5, 200))
+
+# --- Embryo panel ---
+plot_emb <- ggplot() +
+  geom_rect(data = rect_df_emb,
+            aes(xmin = 0.5, xmax = 1.5, ymin = ymin, ymax = ymax),
+            fill = NA, color = "gray", linewidth = 0.6) +
+  geom_text(data = rect_df_emb,
+            aes(x = 0.35, y = y_mid,
+                label = stringr::str_wrap(parentTerm, width = 30)),
+            hjust = 1, size = 4, fontface = "italic", lineheight = 0.85) +
+  geom_point(data = bp_emb_plotdf,
+             aes(x = 1, y = y_pos, size = numDEInCat, color = -log10(padj))) +
+  scale_color_viridis_c(option = "plasma", name = "-log10(padj)", limits = color_limits) +
+  scale_size_continuous(name = "DEG count", range = c(1, 7)) +
+  scale_x_continuous(breaks = 1, labels = "Embryos", position = "top") +
+  scale_y_continuous(breaks = term_order_emb$y_pos,
+                     labels = stringr::str_wrap(term_order_emb$term, width = 50),
+                     expand = c(0.01, 0.01), position = "right") +
+  labs(x = NULL, y = NULL) +
+  coord_cartesian(xlim = c(0.5, 1.5), clip = "off") +
+  panel_theme
+
+# --- Larvae panel ---
+plot_lar <- ggplot() +
+  geom_rect(data = rect_df_lar,
+            aes(xmin = 0.5, xmax = 1.5, ymin = ymin, ymax = ymax),
+            fill = NA, color = "gray", linewidth = 0.6) +
+  geom_text(data = rect_df_lar,
+            aes(x = 0.35, y = y_mid,
+                label = stringr::str_wrap(parentTerm, width = 30)),
+            hjust = 1, size = 4, fontface = "italic", lineheight = 0.85) +
+  geom_point(data = bp_lar_plotdf,
+             aes(x = 1, y = y_pos, size = numDEInCat, color = -log10(padj))) +
+  scale_color_viridis_c(option = "plasma", name = "-log10(padj)", limits = color_limits) +
+  scale_size_continuous(name = "DEG count", range = c(1, 7)) +
+  scale_x_continuous(breaks = 1, labels = "Larvae", position = "top") +
+  scale_y_continuous(breaks = term_order_lar$y_pos,
+                     labels = stringr::str_wrap(term_order_lar$term, width = 50),
+                     expand = c(0.01, 0.01), position = "right") +
+  labs(x = NULL, y = NULL) +
+  coord_cartesian(xlim = c(0.5, 1.5), clip = "off") +
+  panel_theme
+
+# Combine with patchwork; share legends at bottom
+bp_grouped_plot <- (plot_emb | plot_lar) +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+bp_grouped_plot
+
+ggsave("figures/Figure5_GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.pdf",
+       bp_grouped_plot, width = 20, height = 14)
+ggsave("figures/Figure5_GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.png",
+       bp_grouped_plot, width = 20, height = 14)
+```
