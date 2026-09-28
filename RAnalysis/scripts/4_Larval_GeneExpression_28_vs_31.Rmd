@@ -683,18 +683,49 @@ gene_labels_31 <- up.31.sig.list.annot |>
   dplyr::left_join(up.31.sig |> dplyr::mutate(Gene = rownames(up.31.sig)) |>
                      dplyr::select(Gene, log2FoldChange), by = "Gene")
 
-# GO annotation tile plot
+# GO annotation tile plot — cluster both axes by binary co-occurrence
+mat_31 <- go_31_filt |>
+  dplyr::left_join(gene_labels_31, by = "Gene") |>
+  dplyr::filter(!is.na(label)) |>
+  dplyr::distinct(label, term) |>
+  dplyr::mutate(present = 1) |>
+  tidyr::pivot_wider(names_from = term, values_from = present, values_fill = 0) |>
+  tibble::column_to_rownames("label") |>
+  as.matrix()
+
+gene_levels_31 <- rownames(mat_31)[hclust(dist(mat_31, method = "binary"))$order]
+
+# Manual term order: signaling → regulation → neural development
+term_order_manual_31 <- c(
+  "Wnt signaling pathway",
+  "calcium-mediated signaling",
+  "negative regulation of cell migration",
+  "negative regulation of response to oxidative stress",
+  "negative regulation of endocytosis",
+  "regulation of long-term synaptic potentiation",
+  "regulation of neurotransmitter secretion",
+  "nervous system development",
+  "axonogenesis",
+  "axon guidance",
+  "synapse assembly",
+  "neuron projection development"
+)
+
 tile_31 <- go_31_filt |>
   dplyr::left_join(gene_labels_31, by = "Gene") |>
   dplyr::filter(!is.na(label)) |>
-  ggplot(aes(x = stringr::str_wrap(term, 25),
-             y = reorder(label, log2FoldChange))) +
+  dplyr::mutate(
+    label = factor(label, levels = gene_levels_31),
+    term  = factor(stringr::str_wrap(term, 25),
+                   levels = stringr::str_wrap(term_order_manual_31, 25))
+  ) |>
+  ggplot(aes(x = term, y = label)) +
   geom_tile(fill = "#C0392B", color = "white", linewidth = 0.3) +
   scale_x_discrete(position = "top") +
   labs(x = NULL, y = NULL) +
   theme_minimal() +
   theme(axis.text.x = element_text(size = 8, angle = 0, hjust = 0.5),
-        axis.text.y = element_text(size = 8),
+        axis.text.y = element_text(size = 10),
         panel.grid  = element_blank(),
         plot.title  = element_text(size = 10, face = "bold"))
 
@@ -706,22 +737,24 @@ lfc31_plot <- Output.Higher.31 |>
   geom_segment(aes(x = label, xend = label, y = 0, yend = log2FoldChange), linewidth = 2) +
   geom_point(size = 4) +
   scale_color_viridis_c(option = "plasma", name = "-log10(padj)") +
+  scale_x_discrete(expand = expansion(add = c(1, 1))) +
   labs(x = NULL, y = "log2 Fold Change\n(higher at 31°C)") +
   theme_classic() +
   theme(legend.position = c(0.05, 0.8),
         axis.title.y    = element_text(size = 14, face = "bold"),
         axis.title.x    = element_text(size = 14, angle = 45, face = "bold"),
         axis.text.x = element_text(size = 10, angle = 45, hjust = 1, vjust = 1),
-        axis.text.y = element_text(size = 10))
+        axis.text.y = element_text(size = 10),
+        plot.margin = margin(t = 5, r = 5, b = 5, l = 80, unit = "pt"))
 
 # Combined figure
 Temperature_DEG_GO_31 <- (lfc31_plot / free(tile_31)) +
-  plot_layout(heights = c(1.5, 1)) +
+  plot_layout(heights = c(1, 1.5)) +
   plot_annotation(tag_levels = "A")
 Temperature_DEG_GO_31
 
-ggsave("figures/Figure7_Temperature_DEG_GO_31.pdf", Temperature_DEG_GO_31, width = 22, height = 14)
-ggsave("figures/Figure7_Temperature_DEG_GO_31.png", Temperature_DEG_GO_31, width = 22, height = 14)
+ggsave("figures/Figure7_Temperature_DEG_GO_31.pdf", Temperature_DEG_GO_31, width = 24, height = 14)
+ggsave("figures/Figure7_Temperature_DEG_GO_31.png", Temperature_DEG_GO_31, width = 24, height = 14)
 ```
 
 # Combined figure: genes higher at 28°C with direct BP GO annotations

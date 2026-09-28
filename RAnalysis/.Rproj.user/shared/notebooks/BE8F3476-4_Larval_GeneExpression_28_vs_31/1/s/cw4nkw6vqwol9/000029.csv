@@ -1,6 +1,0 @@
-"0","#dev.off()"
-"0",""
-"0","#### Plotting PCA from Expression visualization"
-"0",""
-"0","#pdf(file=""Output/PCA_all.pdf"")"
-"0","plotPCA(rld, intgroup = c(""group"")) #plot PCA of samples with all data"

@@ -1,6 +1,0 @@
-"0",""
-"0",""
-"0","  EnhancedVolcano(DEG.int.res,"
-"0","    lab = rownames(DEG.int.res),"
-"0","    x = 'log2FoldChange',"
-"0","    y = 'pvalue')"

@@ -1,7 +1,0 @@
-"0","#read in annotation data file"
-"0","Annot <- readxl::read_xlsx(""data/Tagseq_zymo_genohub/FileS2_Pver_gene_annot_May28.xlsx"", skip=4) "
-"0",""
-"0","#list gene names"
-"0","annot.genes <- as.data.frame(Annot$Gene)"
-"0","colnames(annot.genes)[1] <- ""Gene"""
-"0","head(annot.genes)"

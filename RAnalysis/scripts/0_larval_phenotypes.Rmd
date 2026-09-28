@@ -1,5 +1,5 @@
 ---
-title: "swim_tracking"
+title: "size_stage_swim_tracking"
 author: "HM Putnam"
 date: "2024-06-02"
 output: html_document
@@ -7,49 +7,134 @@ output: html_document
 
 ```{r setup, include=FALSE}
 library(tidyverse)
+library(patchwork)
 ```
 
-
-
+Load swimming data and calculate percent motile
 ```{r}
+data <- read.csv("data/swimming/20231212_swimming.csv")
 
-data <- read.csv("data/larval/swimming/swimming.csv")
-
-data$percent.motile <- (data$swimming/(data$swimming+data$still))*100
+data$percent.motile <- (data$swimming / (data$swimming + data$still)) * 100
 data$Treatment <- as.factor(data$Treatment)
 
-#view data
-hist(data$percent.motile)
-boxplot(data$percent.motile)
-boxplot(data$percent.motile ~ data$Treatment)
+# Assumption checks: normality per group and equal variances
+data |> group_by(Treatment) |>
+  summarise(shapiro_W = shapiro.test(log10(percent.motile))$statistic,
+            shapiro_p = shapiro.test(log10(percent.motile))$p.value)
+var.test(log10(percent.motile) ~ Treatment, data = data)
 
+# Ambient group fails normality (W = 0.66, p = 0.004); reporting Wilcoxon rank-sum
+# Both tests agree: t-test p = 0.040, Wilcoxon p = 0.032
+wilcox.test(percent.motile ~ Treatment, data = data)
 
-
-res <- aov(log10(percent.motile) ~ Treatment, data=data)
-summary(res)
-hist(res$residuals)
-boxplot(res$residuals)
 ```
 
-Plot data
+Load and separate size and stage data
 ```{r}
-pdf("figures/motility.pdf", width = 2, height = 3)
-data %>%
-  ggplot( aes(x=Treatment, y=percent.motile, fill=Treatment)) +
-    geom_boxplot() +
-    scale_fill_manual(values=c("lightblue", "red"))+
-    geom_jitter(color="black", size=2, alpha=0.9, pch=17) +
-    theme_classic() +
-    theme(
-      legend.position="none",
-      plot.title = element_text(size=11)
-    ) +
-    ylab("Percent Motile Embryos")+
-    ylim(0,100)
-dev.off()
-#            Df  Sum Sq Mean Sq F value Pr(>F)  
-#Treatment    1 0.06836 0.06836   6.232 0.0371 *
-#Residuals    8 0.08775 0.01097                 
-#---
-#Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+size  <- read.csv("data/size_stage/20231212_size.csv")
+stage <- read.csv("data/size_stage/20231212_stage.csv")
+
+# Separate embryo and larval size measurements
+embryo_size <- size |> filter(stage == "Egg")
+larval_size  <- size |> filter(stage == "Larvae")
+```
+
+Calculate embryo sphere volume and stage proportions at 08:35 first sampling
+```{r}
+# Sphere volume from mean of two diameters (µm), converted to mm³
+embryo_size <- embryo_size |>
+  mutate(
+    mean_diam  = (diameter1 + diameter2) / 2,
+    volume     = (4/3) * pi * (mean_diam / 2)^3,
+    volume_mm3 = volume / 1e9
+  )
+
+# Stage proportions pooled across all tubes
+stage_prop <- stage |>
+  summarise(across(c(egg, cell2, cell4, cell8), sum)) |>
+  pivot_longer(everything(), names_to = "stage", values_to = "count") |>
+  mutate(
+    stage      = factor(stage, levels = c("egg", "cell2", "cell4", "cell8"),
+                        labels = c("Egg", "2-cell", "4-cell", "8-cell")),
+    proportion = count / sum(count)
+  )
+
+# Embryo volume boxplot
+p1 <- ggplot(embryo_size, aes(x = "Ambient", y = volume_mm3)) +
+  geom_boxplot(outlier.shape = NA, width = 0.4, color = "blue") +
+  geom_jitter(width = 0.1, size = 1.5, alpha = 0.6, color = "blue") +
+  labs(x = NULL, y = expression("Embryo Volume (mm"^3*")")) +
+  theme_classic()
+
+# Label midpoints: ggplot stacks in reverse factor order (last level at bottom)
+stage_prop_pos <- stage_prop |>
+  arrange(desc(stage)) |>
+  mutate(
+    x          = 1,
+    cumulative = cumsum(proportion),
+    midpoint   = cumulative - proportion / 2
+  )
+
+# Stage proportion stacked bar with side labels
+p2 <- ggplot(stage_prop_pos, aes(x = x, y = proportion, fill = stage)) +
+  geom_bar(stat = "identity", width = 0.4) +
+  geom_text(aes(x = 1.25, y = midpoint, label = stage), hjust = 0, size = 3) +
+  scale_fill_brewer(palette = "Blues") +
+  scale_x_continuous(breaks = 1, labels = "Ambient", limits = c(0.5, 2.5)) +
+  labs(x = NULL, y = "Proportion") +
+  theme_classic() +
+  theme(legend.position = "none")
+
+p1 | p2
+```
+
+Calculate larval oblate spheroid volume and t-test after development at 28°C and 31°C
+```{r}
+# Oblate spheroid volume: V = (4/3) * pi * a^2 * c
+# a = length semi-axis (diameter1 / 2), c = width semi-axis (diameter2 / 2)
+larval_size <- larval_size |>
+  mutate(
+    volume     = (4/3) * pi * (diameter1 / 2)^2 * (diameter2 / 2),
+    volume_mm3 = volume / 1e9
+  )
+
+# Assumption checks: normality per group on raw and log-transformed volume
+larval_size |> group_by(treatment) |>
+  summarise(shapiro_W_raw = shapiro.test(volume_mm3)$statistic,
+            shapiro_p_raw = shapiro.test(volume_mm3)$p.value,
+            shapiro_W_log = shapiro.test(log(volume_mm3))$statistic,
+            shapiro_p_log = shapiro.test(log(volume_mm3))$p.value)
+
+# Log transformation resolves non-normality in High group (p: 0.008 → 0.802)
+# Equal variances not required for Welch t-test
+# Reporting Welch t-test on log-transformed volume
+t.test(log(volume_mm3) ~ treatment, data = larval_size)
+
+
+```
+
+Multi-panel figure: A) embryo size and stage proportions, B) percent motile, C) larval volume
+```{r}
+p_motile <- ggplot(data, aes(x = Treatment, y = percent.motile, color = Treatment)) +
+  geom_boxplot(outlier.shape = NA, width = 0.4) +
+  geom_jitter(width = 0.1, size = 1.5, alpha = 0.6) +
+  scale_color_manual(values = c("Ambient" = "blue", "High" = "red")) +
+  labs(x = "Treatment", y = "Motile Embryos (%)") +
+  theme_classic() +
+  theme(legend.position = "none")
+
+p_volume <- ggplot(larval_size, aes(x = treatment, y = volume_mm3, color = treatment)) +
+  geom_boxplot(outlier.shape = NA, width = 0.4) +
+  geom_jitter(width = 0.1, size = 1.5, alpha = 0.6) +
+  scale_color_manual(values = c("Ambient" = "blue", "High" = "red")) +
+  labs(x = "Treatment", y = expression("Larval Volume (mm"^3*")")) +
+  theme_classic() +
+  theme(legend.position = "none")
+
+fig1 <- (p1 + labs(tag = "A") | p2 + labs(tag = "B") | p_motile + labs(tag = "C") | p_volume + labs(tag = "D")) &
+  theme(plot.tag = element_text(face = "bold"))
+
+ggsave("figures/Figure2_embryo_larval_phenotypes.pdf", fig1, width = 12, height = 4)
+ggsave("figures/Figure2_embryo_larval_phenotypes.png", fig1, width = 12, height = 4)
+fig1
 ```
