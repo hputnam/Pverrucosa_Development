@@ -28,6 +28,7 @@ library("GOSemSim")
 library("patchwork")
 library("ggraph")
 library("igraph")
+library("ggrepel")
 
 ```
 
@@ -52,7 +53,7 @@ sample_ColData <- read.csv("data/Tagseq_zymo_genohub/Pverr_larvae_Seq_Sample_Inf
 sample_ColData$group <- paste0(sample_ColData$Stage,"_",sample_ColData$Temperature)
 
 #Read in data
-TranscriptCountData <- as.data.frame(read.csv(file= "data/Tagseq_zymo_genohub/Pverr_larvae_gene_count_matrix.csv", sep=",", header = TRUE))
+TranscriptCountData <- as.data.frame(read.csv(file= "data/Tagseq_zymo_genohub/20261004_Pver_genome_assembly_v1.0_gene_count_matrix.csv", sep=",", header = TRUE))
 
 colnames(TranscriptCountData)[1] <- "Gene"
 
@@ -188,7 +189,7 @@ genes.expressed <- nrow(filt.count.mat)
 genes.counted <- nrow(TranscriptCountData)
 
 #proportion of the geneset expressed in the larval stage
-genes.expressed/genes.counted
+round(genes.expressed/genes.counted* 100, 2)
 
 #add annotation data to filtered counts
 EGs <- as.data.frame(filt.count.mat)
@@ -368,15 +369,15 @@ length(unique(reducedTerms.BP.LAR$parentTerm))
 unique(reducedTerms.BP.LAR$parentTerm)
 
 #plot GO terms under their parent terms
-pdf("figures/Figure4_BP_larval_expression.pdf", width = 18, height = 8)
+pdf("figures/FigureS2_BP_larval_expression.pdf", width = 18, height = 8)
 treemapPlot(reducedTerms.BP.LAR, force.print.labels=T)
 dev.off()
 
-png("figures/Figure4_BP_larval_expression.png", width = 18, height = 8, units = "in", res = 300)
+png("figures/FigureS2_BP_larval_expression.png", width = 18, height = 8, units = "in", res = 300)
 treemapPlot(reducedTerms.BP.LAR, force.print.labels=T)
 dev.off()
 
-jpeg("figures/Figure4_BP_embryo_expression.jpg", width = 18, height = 8, units = "in", res = 300)
+jpeg("figures/FigureS2_BP_larval_expression.jpg", width = 18, height = 8, units = "in", res = 300)
 treemapPlot(reducedTerms.BP.LAR, force.print.labels=T)
 dev.off()
 

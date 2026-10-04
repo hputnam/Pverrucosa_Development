@@ -59,11 +59,18 @@ stage_prop <- stage |>
     proportion = count / sum(count)
   )
 
+# Embryo diameter boxplot
+p_diam <- ggplot(embryo_size, aes(x = "Ambient", y = mean_diam)) +
+  geom_boxplot(outlier.shape = NA, width = 0.4, color = "blue") +
+  geom_jitter(width = 0.1, size = 1.5, alpha = 0.6, color = "blue") +
+  labs(x = NULL, y = "Diameter (µm)") +
+  theme_classic()
+
 # Embryo volume boxplot
 p1 <- ggplot(embryo_size, aes(x = "Ambient", y = volume_mm3)) +
   geom_boxplot(outlier.shape = NA, width = 0.4, color = "blue") +
   geom_jitter(width = 0.1, size = 1.5, alpha = 0.6, color = "blue") +
-  labs(x = NULL, y = expression("Embryo Volume (mm"^3*")")) +
+  labs(x = NULL, y = expression("Volume (mm"^3*")")) +
   theme_classic()
 
 # Label midpoints: ggplot stacks in reverse factor order (last level at bottom)
@@ -85,18 +92,16 @@ p2 <- ggplot(stage_prop_pos, aes(x = x, y = proportion, fill = stage)) +
   theme_classic() +
   theme(legend.position = "none")
 
-p1 | p2
+p_diam | p1 | p2
 ```
 
 Calculate larval oblate spheroid volume and t-test after development at 28°C and 31°C
 ```{r}
 # Oblate spheroid volume: V = (4/3) * pi * a^2 * c
 # a = length semi-axis (diameter1 / 2), c = width semi-axis (diameter2 / 2)
+# Volume converted to mm³ (diameters measured in µm, divided by 1e9)
 larval_size <- larval_size |>
-  mutate(
-    volume     = (4/3) * pi * (diameter1 / 2)^2 * (diameter2 / 2),
-    volume_mm3 = volume / 1e9
-  )
+  mutate(volume_mm3 = ((4/3) * pi * (diameter1 / 2)^2 * (diameter2 / 2)) / 1e9)
 
 # Assumption checks: normality per group on raw and log-transformed volume
 larval_size |> group_by(treatment) |>
@@ -119,7 +124,7 @@ p_motile <- ggplot(data, aes(x = Treatment, y = percent.motile, color = Treatmen
   geom_boxplot(outlier.shape = NA, width = 0.4) +
   geom_jitter(width = 0.1, size = 1.5, alpha = 0.6) +
   scale_color_manual(values = c("Ambient" = "blue", "High" = "red")) +
-  labs(x = "Treatment", y = "Motile Embryos (%)") +
+  labs(x = "", y = "Motile Embryos (%)") +
   theme_classic() +
   theme(legend.position = "none")
 
@@ -127,14 +132,75 @@ p_volume <- ggplot(larval_size, aes(x = treatment, y = volume_mm3, color = treat
   geom_boxplot(outlier.shape = NA, width = 0.4) +
   geom_jitter(width = 0.1, size = 1.5, alpha = 0.6) +
   scale_color_manual(values = c("Ambient" = "blue", "High" = "red")) +
-  labs(x = "Treatment", y = expression("Larval Volume (mm"^3*")")) +
+  labs(x = "", y = expression("Larval Volume (mm"^3*")")) +
   theme_classic() +
   theme(legend.position = "none")
 
-fig1 <- (p1 + labs(tag = "A") | p2 + labs(tag = "B") | p_motile + labs(tag = "C") | p_volume + labs(tag = "D")) &
+fig1 <- (p_diam + labs(tag = "A") | p1 + labs(tag = "B") | p2 + labs(tag = "C") | p_motile + labs(tag = "D") | p_volume + labs(tag = "E")) +
+  plot_layout(widths = c(0.6, 0.6, 0.6, 1, 1)) &
   theme(plot.tag = element_text(face = "bold"))
 
-ggsave("figures/Figure2_embryo_larval_phenotypes.pdf", fig1, width = 12, height = 4)
-ggsave("figures/Figure2_embryo_larval_phenotypes.png", fig1, width = 12, height = 4)
+ggsave("figures/Figure2_embryo_larval_phenotypes.pdf", fig1, width = 8, height = 4)
+ggsave("figures/Figure2_embryo_larval_phenotypes.png", fig1, width = 8, height = 4)
 fig1
 ```
+
+```{r summary_stats}
+# Embryo diameter and volume (all embryos, n = 32)
+embryo_size |>
+  summarise(
+    diam_mean   = mean(mean_diam,   na.rm = TRUE),
+    diam_min    = min(mean_diam,    na.rm = TRUE),
+    diam_max    = max(mean_diam,    na.rm = TRUE),
+    vol_mean    = mean(volume_mm3,  na.rm = TRUE),
+    vol_min     = min(volume_mm3,   na.rm = TRUE),
+    vol_max     = max(volume_mm3,   na.rm = TRUE)
+  )
+
+# Motile embryos: mean ± SEM per treatment and fold change High vs Ambient
+motile_summary <- data |>
+  group_by(Treatment) |>
+  summarise(
+    n    = n(),
+    mean = mean(percent.motile, na.rm = TRUE),
+    sem  = sd(percent.motile,   na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+cat("Motility sample sizes — Ambient:", motile_summary$n[motile_summary$Treatment == "Ambient"],
+    "groups | High:", motile_summary$n[motile_summary$Treatment == "High"], "groups\n")
+motile_summary
+
+motile_fc <- motile_summary |>
+  tidyr::pivot_wider(names_from = Treatment, values_from = c(mean, sem, n)) |>
+  mutate(fold_change_High_vs_Ambient = mean_High / mean_Ambient)
+cat("Fold change (High / Ambient motility):", round(motile_fc$fold_change_High_vs_Ambient, 2), "\n")
+
+# Motility: Wilcoxon rank-sum test (Ambient fails normality)
+motile_test <- wilcox.test(percent.motile ~ Treatment, data = data)
+cat("Motility Wilcoxon rank-sum: W =", motile_test$statistic,
+    ", p =", round(motile_test$p.value, 3), "\n")
+
+# Embryo cleavage stage proportions at first collection (08:35)
+stage_prop |>
+  mutate(percent = round(proportion * 100, 1))
+
+# Larval volume: mean ± SEM per treatment
+larval_vol_summary <- larval_size |>
+  group_by(treatment) |>
+  summarise(
+    n    = n(),
+    mean = mean(volume_mm3, na.rm = TRUE),
+    sem  = sd(volume_mm3,   na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+cat("Larval volume sample sizes — Ambient:", larval_vol_summary$n[larval_vol_summary$treatment == "Ambient"],
+    "larvae | High:", larval_vol_summary$n[larval_vol_summary$treatment == "High"], "larvae\n")
+larval_vol_summary
+
+# Larval volume: Welch t-test on log-transformed volume
+larval_test <- t.test(log(volume_mm3) ~ treatment, data = larval_size)
+cat("Larval volume Welch t-test (log-transformed): t =", round(larval_test$statistic, 2),
+    ", df =", round(larval_test$parameter, 1),
+    ", p =", round(larval_test$p.value, 3), "\n")
+```
+

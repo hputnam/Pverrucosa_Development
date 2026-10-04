@@ -55,7 +55,7 @@ sample_ColData <- read.csv("data/Tagseq_zymo_genohub/Pverr_larvae_Seq_Sample_Inf
 sample_ColData$group <- paste0(sample_ColData$Stage,"_",sample_ColData$Temperature)
 
 #Read in data
-TranscriptCountData <- as.data.frame(read.csv(file= "data/Tagseq_zymo_genohub/Pverr_larvae_gene_count_matrix.csv", sep=",", header = TRUE))
+TranscriptCountData <- as.data.frame(read.csv(file= "data/Tagseq_zymo_genohub/20261004_Pver_genome_assembly_v1.0_gene_count_matrix.csv", sep=",", header = TRUE))
 
 colnames(TranscriptCountData)[1] <- "Gene"
 
@@ -238,7 +238,6 @@ write.csv(counts(sig.list), file="output/DEG_05FDR.all.csv")
 res_df <- as.data.frame(DEG.int.res)
 res_df <- res_df %>% subset(padj<0.05)
 
-
 #subset upregulated at 31°C
 up.31.sig <- res_df %>%
   subset(padj<0.05) %>%
@@ -270,7 +269,6 @@ up.28.sig.list <- as.data.frame(counts(up.28.sig.list))
 #add annotation data
 up.28.sig.list$Gene <- rownames(up.28.sig.list)
 up.28.sig.list.annot <- left_join(up.28.sig.list, Annot,  by="Gene")
-
 
 ```
 
@@ -334,9 +332,7 @@ Hmap
 ```{r}
 #arrange plots
 DEplots <- ggarrange(PCA.plot, as.grob(Hmap), ncol=2, labels = c("A)","B)"))
-#save file
-ggsave("figures/Pverr_larvae_DEplots_Temperature.pdf", DEplots, width = 16, height=8)
-ggsave("figures/Pverr_larvae_DEplots_Temperature.png", DEplots, width = 16, height=8)
+
 ```
 
 
@@ -349,7 +345,7 @@ DEGs$Gene <- rownames(DEGs)
 #join counts and annotation
 Output <- left_join(DEGs,Annot,  by="Gene")
 #save file of annotated DEGs
-write.csv(Output,"output/31_vs_28_Larvae_Annotated_DEGS.csv")
+write.csv(Output, "figures/TableS6_28vs31_Larvae_Annotated_DEGS.csv")
 
 #separate short hit name from long name
 Output <- Output %>% separate(Hit_description, into = c("Hit_description1", "Hit_description2"),
@@ -374,7 +370,6 @@ Output$label <- factor(Output$label, levels = Output$label[order(Output$log2Fold
 
 
 #plot FC and pvalues
-pdf("figures/DEG_LFC_Larvae_Temperature_31v28.pdf", height = 12, width = 8)
 DEG_LFC_31v28 <- Output %>% arrange(log2FoldChange) %>%
   ggplot(aes(x=label, y=log2FoldChange, colour=padj)) +
   ylim(-10,10)+
@@ -391,7 +386,7 @@ DEG_LFC_31v28 <- Output %>% arrange(log2FoldChange) %>%
         axis.title.x = element_text(size = 14, face = "bold"),
         plot.title = element_text(size = 40, face = "bold"))
 DEG_LFC_31v28
-dev.off()
+
 
 
 # DEGs higher at 31
@@ -403,7 +398,6 @@ Output.Higher.31$label <- factor(Output.Higher.31$label, levels = Output.Higher.
 
   
 #plot FC and pvalues
-pdf("figures/DEG_LFC_Larvae_Temperature_higher31.pdf", height = 12, width = 8)
 DEG_LFC_31 <- Output.Higher.31 %>% arrange(log2FoldChange) %>%
   ggplot(aes(x=label, y=log2FoldChange, colour=padj)) +
   ylim(0,10)+
@@ -418,7 +412,7 @@ DEG_LFC_31 <- Output.Higher.31 %>% arrange(log2FoldChange) %>%
         plot.title = element_text(size = 40, face = "bold"))+
   ggtitle('A')
 DEG_LFC_31
-dev.off()
+
 
 # DEGs higher at 28
 Output.Higher.28 <- Output %>%
@@ -429,7 +423,6 @@ Output.Higher.28$label <- factor(Output.Higher.28$label, levels = Output.Higher.
 
   
 #plot FC and pvalues
-pdf("figures/DEG_LFC_Larvae_Temperature_higher28.pdf", height = 6, width = 8)
 DEG_LFC_28 <- Output.Higher.28 %>% arrange(log2FoldChange) %>%
   ggplot(aes(x=label, y=-log2FoldChange, colour=padj)) +
   ylim(0,10)+
@@ -444,7 +437,7 @@ DEG_LFC_28 <- Output.Higher.28 %>% arrange(log2FoldChange) %>%
         plot.title = element_text(size = 40, face = "bold"))+
   ggtitle('B')
   DEG_LFC_28
-dev.off()
+
 ```
 
 # GO ENRICHMENT
@@ -566,7 +559,11 @@ L31.CC.INT <- subset(enriched.GO.05, ontology=="CC")
 L31.CC.INT <- L31.CC.INT[order(L31.CC.INT$numDEInCat),]
 L31.BP.INT <- subset(enriched.GO.05, ontology=="BP")
 L31.BP.INT <- L31.BP.INT[order(L31.BP.INT$numDEInCat),]
-write.csv(enriched.GO.05, file = "output/TableS6_L31_upregDEG_Enriched_GO_Terms.csv")
+if (nrow(enriched.GO.05) > 0) {
+  write.csv(enriched.GO.05, file = "figures/TableS8_L31_upregDEG_Enriched_GO_Terms.csv")
+} else {
+  message("Table S8: no significant GO terms for 31°C-upregulated DEGs — file not written.")
+}
 
 ```
 
@@ -639,14 +636,18 @@ L28.CC.INT <- subset(enriched.GO.05, ontology=="CC")
 L28.CC.INT <- L28.CC.INT[order(L28.CC.INT$numDEInCat),]
 L28.BP.INT <- subset(enriched.GO.05, ontology=="BP")
 L28.BP.INT <- L28.BP.INT[order(L28.BP.INT$numDEInCat),]
-write.csv(enriched.GO.05, file = "output/TableS7_L28_upregDEG_Enriched_GO_Terms.csv")
+if (nrow(enriched.GO.05) > 0) {
+  write.csv(enriched.GO.05, file = "figures/TableS7_L28_upregDEG_Enriched_GO_Terms.csv")
+} else {
+  message("Table S7: no significant GO terms for 28°C-upregulated DEGs — file not written.")
+}
 
 ```
 
 # combining plots
 # Combined figure: genes higher at 31°C with direct BP GO annotations
 # Note: GO enrichment returned 0 significant terms (only 46 DEGs — underpowered).
-# Terms shared by ≥2 genes are shown as a tile plot.
+# GO terms reduced by semantic similarity (rrvgo, Wang method, threshold = 0.9).
 ```{r Temperature_DEG_GO_31}
 genes_31 <- up.31.sig.list.annot$Gene
 
@@ -664,61 +665,39 @@ go_31_named <- Annot |>
 cat("Genes with BP annotations:", length(unique(go_31_named$Gene)), "/", length(genes_31), "\n")
 cat("Unique BP GO terms:", length(unique(go_31_named$term)), "\n")
 
-# Filter to terms shared by ≥2 genes to show patterns
-term_counts_31 <- go_31_named |>
-  dplyr::count(term) |>
-  dplyr::filter(n >= 2)
-cat("Terms shared by ≥2 genes:", nrow(term_counts_31), "\n")
+# Reduce GO term redundancy via semantic similarity (Wang method, threshold = 0.9)
+go_ids_31  <- dplyr::distinct(go_31_named, category) |> dplyr::pull(category)
+scores_31  <- setNames(rep(1, length(go_ids_31)), go_ids_31)
+sim_mat    <- rrvgo::calculateSimMatrix(go_ids_31, orgdb = "org.Hs.eg.db",
+                                        ont = "BP", method = "Wang")
+reduced_31 <- rrvgo::reduceSimMatrix(sim_mat, scores = scores_31,
+                                     threshold = 0.9, orgdb = "org.Hs.eg.db")
 
-go_31_filt <- go_31_named |> dplyr::filter(term %in% term_counts_31$term)
+# Map every gene to its cluster's representative (parent) term
+# Genes annotated to non-representative terms are retained under their parent term
+go_31_filt <- go_31_named |>
+  dplyr::left_join(reduced_31 |> dplyr::select(go, parentTerm),
+                   by = c("category" = "go")) |>
+  dplyr::filter(!is.na(parentTerm)) |>
+  dplyr::mutate(term = parentTerm) |>
+  dplyr::distinct(Gene, term, category, ontology)
+cat("Representative terms:", length(unique(go_31_filt$term)), "\n")
+cat("Genes represented:", length(unique(go_31_filt$Gene)), "\n")
 
 # Gene labels with short protein name and gene ID
 gene_labels_31 <- up.31.sig.list.annot |>
   dplyr::mutate(
     short_name = stringr::str_extract(Hit_description, "^[^(]+") |> trimws(),
-    short_name = stringr::str_trunc(short_name, 30),
     label = paste0(short_name, " (", gsub("Pver_(gene_|novel_gene_)", "g", Gene), ")")
   ) |>
   dplyr::select(Gene, label) |>
   dplyr::left_join(up.31.sig |> dplyr::mutate(Gene = rownames(up.31.sig)) |>
                      dplyr::select(Gene, log2FoldChange), by = "Gene")
 
-# GO annotation tile plot — cluster both axes by binary co-occurrence
-mat_31 <- go_31_filt |>
-  dplyr::left_join(gene_labels_31, by = "Gene") |>
-  dplyr::filter(!is.na(label)) |>
-  dplyr::distinct(label, term) |>
-  dplyr::mutate(present = 1) |>
-  tidyr::pivot_wider(names_from = term, values_from = present, values_fill = 0) |>
-  tibble::column_to_rownames("label") |>
-  as.matrix()
-
-gene_levels_31 <- rownames(mat_31)[hclust(dist(mat_31, method = "binary"))$order]
-
-# Manual term order: signaling → regulation → neural development
-term_order_manual_31 <- c(
-  "Wnt signaling pathway",
-  "calcium-mediated signaling",
-  "negative regulation of cell migration",
-  "negative regulation of response to oxidative stress",
-  "negative regulation of endocytosis",
-  "regulation of long-term synaptic potentiation",
-  "regulation of neurotransmitter secretion",
-  "nervous system development",
-  "axonogenesis",
-  "axon guidance",
-  "synapse assembly",
-  "neuron projection development"
-)
-
 tile_31 <- go_31_filt |>
   dplyr::left_join(gene_labels_31, by = "Gene") |>
   dplyr::filter(!is.na(label)) |>
-  dplyr::mutate(
-    label = factor(label, levels = gene_levels_31),
-    term  = factor(stringr::str_wrap(term, 25),
-                   levels = stringr::str_wrap(term_order_manual_31, 25))
-  ) |>
+  dplyr::mutate(term = stringr::str_wrap(term, 25)) |>
   ggplot(aes(x = term, y = label)) +
   geom_tile(fill = "#C0392B", color = "white", linewidth = 0.3) +
   scale_x_discrete(position = "top") +
@@ -727,7 +706,8 @@ tile_31 <- go_31_filt |>
   theme(axis.text.x = element_text(size = 8, angle = 0, hjust = 0.5),
         axis.text.y = element_text(size = 10),
         panel.grid  = element_blank(),
-        plot.title  = element_text(size = 10, face = "bold"))
+        plot.title  = element_text(size = 10, face = "bold"),
+        plot.margin = margin(t = 5, r = 5, b = 5, l = 120, unit = "pt"))
 
 # LFC lollipop — filter explicitly to padj < 0.05 to guard against session state
 lfc31_plot <- Output.Higher.31 |>
@@ -753,15 +733,16 @@ Temperature_DEG_GO_31 <- (lfc31_plot / free(tile_31)) +
   plot_annotation(tag_levels = "A")
 Temperature_DEG_GO_31
 
-ggsave("figures/Figure7_Temperature_DEG_GO_31.pdf", Temperature_DEG_GO_31, width = 24, height = 14)
-ggsave("figures/Figure7_Temperature_DEG_GO_31.png", Temperature_DEG_GO_31, width = 24, height = 14)
+ggsave("figures/Figure5_Temperature_DEG_GO_31.pdf", Temperature_DEG_GO_31, width = 20, height = 14)
+ggsave("figures/Figure5_Temperature_DEG_GO_31.png", Temperature_DEG_GO_31, width = 20, height = 14)
 ```
 
 # Combined figure: genes higher at 28°C with direct BP GO annotations
 # Note: GO enrichment returned 0 significant terms (only 12 DEGs — underpowered).
 # Direct BP GO annotations for the 12 genes are shown as a tile plot instead.
 ```{r Temperature_DEG_GO_28}
-# Get BP GO annotations for the 12 genes higher at 28°C
+# Get BP GO annotations for genes higher at 28°C
+# GO terms reduced by semantic similarity (rrvgo, Wang method, threshold = 0.9).
 genes_28 <- up.28.sig.list.annot$Gene
 
 go_28_named <- Annot |>
@@ -781,34 +762,46 @@ cat("Unique BP GO terms across the 12 genes:", length(unique(go_28_named$term)),
 gene_labels_28 <- up.28.sig.list.annot |>
   dplyr::mutate(
     short_name = stringr::str_extract(Hit_description, "^[^(]+") |> trimws(),
-    short_name = stringr::str_trunc(short_name, 30),
     label = paste0(short_name, " (", gsub("Pver_(gene_|novel_gene_)", "g", Gene), ")")
   ) |>
   dplyr::select(Gene, label) |>
   dplyr::left_join(up.28.sig |> dplyr::mutate(Gene = rownames(up.28.sig)) |>
                      dplyr::select(Gene, log2FoldChange), by = "Gene")
 
-# Filter to terms shared by ≥2 genes to match 31°C plot
-term_counts_28 <- go_28_named |>
-  dplyr::count(term) |>
-  dplyr::filter(n >= 2)
-cat("Terms shared by ≥2 genes:", nrow(term_counts_28), "\n")
-go_28_filt <- go_28_named |> dplyr::filter(term %in% term_counts_28$term)
+# Reduce GO term redundancy via semantic similarity (Wang method, threshold = 0.9)
+go_ids_28  <- dplyr::distinct(go_28_named, category) |> dplyr::pull(category)
+scores_28  <- setNames(rep(1, length(go_ids_28)), go_ids_28)
+sim_mat_28 <- rrvgo::calculateSimMatrix(go_ids_28, orgdb = "org.Hs.eg.db",
+                                        ont = "BP", method = "Wang")
+reduced_28 <- rrvgo::reduceSimMatrix(sim_mat_28, scores = scores_28,
+                                     threshold = 0.9, orgdb = "org.Hs.eg.db")
+
+# Map every gene to its cluster's representative (parent) term
+# Genes annotated to non-representative terms are retained under their parent term
+go_28_filt <- go_28_named |>
+  dplyr::left_join(reduced_28 |> dplyr::select(go, parentTerm),
+                   by = c("category" = "go")) |>
+  dplyr::filter(!is.na(parentTerm)) |>
+  dplyr::mutate(term = parentTerm) |>
+  dplyr::distinct(Gene, term, category, ontology)
+cat("Representative terms:", length(unique(go_28_filt$term)), "\n")
+cat("Genes represented:", length(unique(go_28_filt$Gene)), "\n")
 
 # GO annotation tile plot
 tile_28 <- go_28_filt |>
   dplyr::left_join(gene_labels_28, by = "Gene") |>
   dplyr::filter(!is.na(label)) |>
-  ggplot(aes(x = stringr::str_wrap(term, 25),
+  ggplot(aes(x = stringr::str_wrap(term, 10),
              y = reorder(label, log2FoldChange))) +
   geom_tile(fill = "steelblue", color = "white", linewidth = 0.3) +
   scale_x_discrete(position = "top") +
   labs(x = NULL, y = NULL) +
   theme_minimal() +
-  theme(axis.text.x = element_text(size = 11, angle = 0, hjust = 0.5),
-        axis.text.y = element_text(size = 11),
+  theme(axis.text.x = element_text(size = 6, angle = 0, hjust = 0.5),
+        axis.text.y = element_text(size = 6),
         panel.grid  = element_blank(),
-        plot.title  = element_text(size = 10, face = "bold"))
+        plot.title  = element_text(size = 10, face = "bold"),
+        plot.margin = margin(t = 5, r = 5, b = 5, l = 120, unit = "pt"))
 
 # LFC lollipop plot
 lfc28_plot <- Output.Higher.28 |>
@@ -824,16 +817,17 @@ lfc28_plot <- Output.Higher.28 |>
         axis.title.y = element_text(size = 14, face = "bold"),
         axis.title.x = element_text(size = 14, angle = 45, face = "bold"),
         axis.text.x = element_text(size = 8, angle = 45, hjust = 1, vjust = 1),
-        axis.text.y = element_text(size = 10))
+        axis.text.y = element_text(size = 10),
+        plot.margin = margin(t = 5, r = 5, b = 5, l = 80, unit = "pt"))
 
 # Combined figure
 Temperature_DEG_GO_28 <- (lfc28_plot / free(tile_28)) +
-  plot_layout(heights = c(3, 2)) +
+  plot_layout(heights = c(3, 3)) +
   plot_annotation(tag_levels = "A")
 Temperature_DEG_GO_28
 
-ggsave("figures/Figure6_Temperature_DEG_GO_28.pdf", Temperature_DEG_GO_28, width = 12, height = 8)
-ggsave("figures/Figure6_Temperature_DEG_GO_28.png", Temperature_DEG_GO_28, width = 12, height = 8)
+ggsave("figures/Figure4_Temperature_DEG_GO_28.pdf", Temperature_DEG_GO_28, width = 12, height = 8)
+ggsave("figures/Figure4_Temperature_DEG_GO_28.png", Temperature_DEG_GO_28, width = 12, height = 8)
 ```
 
 

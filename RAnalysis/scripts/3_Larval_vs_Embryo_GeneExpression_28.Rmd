@@ -53,7 +53,7 @@ sample_ColData <- read.csv("data/Tagseq_zymo_genohub/Pverr_larvae_Seq_Sample_Inf
 sample_ColData$group <- paste0(sample_ColData$Stage,"_",sample_ColData$Temperature)
 
 #Read in data
-TranscriptCountData <- as.data.frame(read.csv(file= "data/Tagseq_zymo_genohub/Pverr_larvae_gene_count_matrix.csv", sep=",", header = TRUE))
+TranscriptCountData <- as.data.frame(read.csv(file= "data/Tagseq_zymo_genohub/20261004_Pver_genome_assembly_v1.0_gene_count_matrix.csv", sep=",", header = TRUE))
 
 colnames(TranscriptCountData)[1] <- "Gene"
 
@@ -326,8 +326,8 @@ Hmap
 #arrange plots
 DEplots <- ggarrange(PCA.plot, as.grob(Hmap), ncol=2, labels = c("A)","B)"))
 #save file
-ggsave("figures/Pverr_larvae_DEplots_Stage.pdf", DEplots, width = 16, height=8)
-ggsave("figures/Pverr_larvae_DEplots_Stage.png", DEplots, width = 16, height=8)
+#ggsave("figures/Pverr_larvae_DEplots_Stage.pdf", DEplots, width = 16, height=8)
+#ggsave("figures/Pverr_larvae_DEplots_Stage.png", DEplots, width = 16, height=8)
 
 ```
 
@@ -529,10 +529,10 @@ reducedTerms.BP.LAR <- reduceSimMatrix(simMatrix,
                                 threshold=0.9,
                                 orgdb="org.Ce.eg.db")
 colnames(reducedTerms.BP.LAR)[1] <- "category"
-
-pdf("figures/BP_DEGS_Up_in_Larvae_vs_Emb_Enriched_GOTerms_semsim.pdf", width = 18, height = 8)
-treemapPlot(reducedTerms.BP.LAR, force.print.labels=T)
-dev.off()
+reducedTerms.BP.LAR
+#pdf("figures/BP_DEGS_Up_in_Larvae_vs_Emb_Enriched_GOTerms_semsim.pdf", width = 18, height = 8)
+#treemapPlot(reducedTerms.BP.LAR, force.print.labels=T)
+#dev.off()
 ```
 #Plotting MF enriched in DEGS up.LAR.sig.list
 ```{r}
@@ -553,10 +553,10 @@ reducedTerms.MF.LAR <- reduceSimMatrix(simMatrix,
                                 threshold=0.9,
                                 orgdb="org.Ce.eg.db")
 colnames(reducedTerms.MF.LAR)[1] <- "category"
-
-pdf("figures/MF_DEGS_Up_in_Larvae_vs_Emb_Enriched_GOTerms_semsim.pdf", width = 18, height = 8)
-treemapPlot(reducedTerms.MF.LAR, force.print.labels=T)
-dev.off()
+reducedTerms.MF.LAR
+#pdf("figures/MF_DEGS_Up_in_Larvae_vs_Emb_Enriched_GOTerms_semsim.pdf", width = 18, height = 8)
+#treemapPlot(reducedTerms.MF.LAR, force.print.labels=T)
+#dev.off()
 ```
 
 
@@ -580,7 +580,7 @@ enriched.lar.plot <- GO.wall.lar |>
          gene_ratio = numDEInCat / numInCat) |>
   filter(padj < 0.01, !is.na(ontology))
 
-write.csv(enriched.lar.plot , file = "figures/TableS4_LAR_upregDEG_Enriched_GO_Terms.csv")
+write.csv(enriched.lar.plot , file = "figures/TableS5_LAR_upregDEG_Enriched_GO_Terms.csv")
 
 # Run GO enrichment for embryo-upregulated DEGs
 DEG.emb.vector <- as.integer(ID.vector %in% as.character(up.EMB.sig.list$Gene))
@@ -596,7 +596,7 @@ enriched.emb.plot <- GO.wall.emb |>
          gene_ratio = numDEInCat / numInCat) |>
   filter(padj < 0.01, !is.na(ontology))
 
-write.csv(enriched.emb.plot , file = "figures/TableS5_EMB_upregDEG_Enriched_GO_Terms.csv")
+write.csv(enriched.emb.plot , file = "figures/TableS4_EMB_upregDEG_Enriched_GO_Terms.csv")
 
 
 cat("Enriched GO terms up in Embryo:", nrow(enriched.emb.plot), "\n")
@@ -742,10 +742,10 @@ bp_grouped_plot <- ggplot() +
         plot.margin        = margin(5, 5, 5, 220))
 bp_grouped_plot
 
-ggsave("figures/Figure5_GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.pdf",
-       bp_grouped_plot, width = 10, height = 14)
-ggsave("figures/Figure5_GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.png",
-       bp_grouped_plot, width = 10, height = 14)
+# ggsave("figures/GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.pdf",
+#        bp_grouped_plot, width = 10, height = 14)
+# ggsave("figures/GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.png",
+#        bp_grouped_plot, width = 10, height = 14)
 ```
 
 # Two-panel version: embryo and larvae as separate panels
@@ -802,43 +802,45 @@ panel_theme <- theme_bw() +
 # --- Embryo panel ---
 plot_emb <- ggplot() +
   geom_rect(data = rect_df_emb,
-            aes(xmin = 0.5, xmax = 1.5, ymin = ymin, ymax = ymax),
+            aes(xmin = 0.8, xmax = 1.2, ymin = ymin, ymax = ymax),
             fill = NA, color = "gray", linewidth = 0.6) +
   geom_text(data = rect_df_emb,
-            aes(x = 0.35, y = y_mid,
+            aes(x = 0.75, y = y_mid,
                 label = stringr::str_wrap(parentTerm, width = 30)),
             hjust = 1, size = 4, fontface = "italic", lineheight = 0.85) +
   geom_point(data = bp_emb_plotdf,
              aes(x = 1, y = y_pos, size = numDEInCat, color = -log10(padj))) +
   scale_color_viridis_c(option = "plasma", name = "-log10(padj)", limits = color_limits) +
-  scale_size_continuous(name = "DEG count", range = c(1, 7)) +
+  scale_size_continuous(name = "DEG count", range = c(1, 7),
+                        limits = c(5, 75), breaks = c(10, 25, 50, 75)) +
   scale_x_continuous(breaks = 1, labels = "Embryos", position = "top") +
   scale_y_continuous(breaks = term_order_emb$y_pos,
                      labels = stringr::str_wrap(term_order_emb$term, width = 50),
                      expand = c(0.01, 0.01), position = "right") +
   labs(x = NULL, y = NULL) +
-  coord_cartesian(xlim = c(0.5, 1.5), clip = "off") +
+  coord_cartesian(xlim = c(0.5, 1.25), clip = "off") +
   panel_theme
 
 # --- Larvae panel ---
 plot_lar <- ggplot() +
   geom_rect(data = rect_df_lar,
-            aes(xmin = 0.5, xmax = 1.5, ymin = ymin, ymax = ymax),
+            aes(xmin = 0.8, xmax = 1.2, ymin = ymin, ymax = ymax),
             fill = NA, color = "gray", linewidth = 0.6) +
   geom_text(data = rect_df_lar,
-            aes(x = 0.35, y = y_mid,
+            aes(x = 0.75, y = y_mid,
                 label = stringr::str_wrap(parentTerm, width = 30)),
             hjust = 1, size = 4, fontface = "italic", lineheight = 0.85) +
   geom_point(data = bp_lar_plotdf,
              aes(x = 1, y = y_pos, size = numDEInCat, color = -log10(padj))) +
   scale_color_viridis_c(option = "plasma", name = "-log10(padj)", limits = color_limits) +
-  scale_size_continuous(name = "DEG count", range = c(1, 7)) +
+  scale_size_continuous(name = "DEG count", range = c(1, 7),
+                        limits = c(5, 75), breaks = c(10, 25, 50, 75)) +
   scale_x_continuous(breaks = 1, labels = "Larvae", position = "top") +
   scale_y_continuous(breaks = term_order_lar$y_pos,
                      labels = stringr::str_wrap(term_order_lar$term, width = 50),
                      expand = c(0.01, 0.01), position = "right") +
   labs(x = NULL, y = NULL) +
-  coord_cartesian(xlim = c(0.5, 1.5), clip = "off") +
+  coord_cartesian(xlim = c(0.5, 1.25), clip = "off") +
   panel_theme
 
 # Combine with patchwork; share legends at bottom
@@ -847,8 +849,8 @@ bp_grouped_plot <- (plot_emb | plot_lar) +
   theme(legend.position = "bottom")
 bp_grouped_plot
 
-ggsave("figures/Figure5_GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.pdf",
-       bp_grouped_plot, width = 20, height = 14)
-ggsave("figures/Figure5_GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.png",
-       bp_grouped_plot, width = 20, height = 14)
+ggsave("figures/Figure3_GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.pdf",
+       bp_grouped_plot, width = 15, height = 14)
+ggsave("figures/Figure3_GO_BP_grouped_dotplot_Embryo_vs_Larvae_28.png",
+       bp_grouped_plot, width = 15, height = 14)
 ```
