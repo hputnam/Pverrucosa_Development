@@ -182,7 +182,31 @@ plotPCA(rld, intgroup = c("group")) #plot PCA of samples with all data
 
 ```
 
+```{r}
+#Identify number of genes that are expressed in the filtered dataset
+n.expressed <- nrow(filt.count.mat)
+cat("Genes in filtered dataset:", n.expressed, "\n")
 
+#Identify number and proportion of genes that are expressed in the entire dataset
+n.total <- nrow(TranscriptCountData)
+cat("Genes in full dataset:", n.total, "\n")
+cat("Proportion expressed:", round(n.expressed / n.total * 100, 1), "%\n")
+
+#add annotation data to filtered counts
+EGs <- as.data.frame(filt.count.mat)
+EGs$Gene <- rownames(EGs)
+EG.Annot <- dplyr::left_join(EGs, Annot, by = "Gene")
+
+# proportion of expressed genes with hit annotation
+n.hit.annot <- sum(!is.na(EG.Annot$Hit_description) & EG.Annot$Hit_description != "")
+cat("Expressed genes with hit annotation:", n.hit.annot, "\n")
+cat("Proportion with hit annotation:", round(n.hit.annot / n.expressed * 100, 1), "%\n")
+
+# proportion of expressed genes with GO annotation
+n.go.annot <- sum(!is.na(EG.Annot$Gene_ontology_IDs) & EG.Annot$Gene_ontology_IDs != "")
+cat("Expressed genes with GO annotation:", n.go.annot, "\n")
+cat("Proportion with GO annotation:", round(n.go.annot / n.expressed * 100, 1), "%\n")
+```
 
 # Differential Gene Expression Analysis
 ```{r}

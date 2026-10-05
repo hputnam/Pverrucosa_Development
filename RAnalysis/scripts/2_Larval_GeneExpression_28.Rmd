@@ -340,6 +340,13 @@ LAR.BP.INT <- LAR.BP.INT[order(LAR.BP.INT$numDEInCat),]
 #Save table of results
 write.csv(enriched.GO, file = "figures/TableS2_Larval_28_Enriched_GOTerms.csv")
 
+#view top 10 significantly enriched GO terms ordered by number of DEGs in category
+top.10.BP <- LAR.BP.INT |>
+  dplyr::arrange(desc(numDEInCat)) |>
+  dplyr::select(category, term, ontology, numDEInCat, numInCat, over_represented_pvalue) |>
+  head(10)
+top.10.BP
+
 ```
 
 #Plotting BP GO enrichment in filtered geneset expressed at the larval stage
@@ -350,11 +357,12 @@ simMatrix <- calculateSimMatrix(LAR.BP.INT$category,
                                 ont=c("BP"),
                                 method="Rel")
 
-#scoring sig enriched terms by pvalue
-scores <- setNames(-log(LAR.BP.INT$over_represented_pvalue), LAR.BP.INT$category)
+#scoring sig enriched terms by numDEInCat
+scores <- setNames(LAR.BP.INT$numDEInCat, LAR.BP.INT$category)
+scores <- scores[names(scores) %in% rownames(simMatrix)]
 
 #reducing sig enriched terms to higher order parent terms and grouping them together by a threshold value
-#and weighting them by scores of pvalue
+#and weighting them by scores
 #higher thresholds result in fewer groups
 reducedTerms.BP.LAR <- reduceSimMatrix(simMatrix,
                                 scores,
@@ -365,8 +373,28 @@ colnames(reducedTerms.BP.LAR)[1] <- "category"
 #calculate the number of unique parent terms
 length(unique(reducedTerms.BP.LAR$parentTerm))
 
-#list the unique parent terms
-unique(reducedTerms.BP.LAR$parentTerm)
+#list the unique parent GO IDs and parent terms
+parent.list.BP <- reducedTerms.BP.LAR |>
+  dplyr::group_by(parent, parentTerm) |>
+  dplyr::arrange(dplyr::desc(parentTerm))
+parent.list.BP
+
+#summarize parent terms by number of child GO terms, cluster size, and proportion of DEGs
+parent.summary.BP <- parent.list.BP |>
+  dplyr::summarise(
+    n_terms = dplyr::n(),
+    n_DEGs_in_parent = score[category == parent][1],
+    prop_genes = round((score[category == parent][1] / length(DEG.vector))*100,1),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(dplyr::desc(n_DEGs_in_parent))
+parent.summary.BP
+
+#identify GO terms dropped from semantic similarity reduction because they are absent from org.Ce.eg.db
+dropped.BP <- LAR.BP.INT |>
+  dplyr::filter(!category %in% rownames(simMatrix)) |>
+  dplyr::select(category, term, numDEInCat, numInCat, over_represented_pvalue)
+dropped.BP
 
 #plot GO terms under their parent terms
 pdf("figures/FigureS2_BP_larval_expression.pdf", width = 18, height = 8)
@@ -386,19 +414,20 @@ dev.off()
 #Plotting MF GO enrichment in filtered geneset expressed at the larval stage
 ```{r}
 #calculate the similarity of GO terms in the expressed list for MF
-simMatrix <- calculateSimMatrix(LAR.MF.INT$category,
+simMatrix.MF <- calculateSimMatrix(LAR.MF.INT$category,
                                 orgdb="org.Ce.eg.db", 
                                 ont=c("MF"),
                                 method="Rel")
 
-#scoring sig enriched terms by pvalue
-scores <- setNames(-log(LAR.MF.INT$over_represented_pvalue), LAR.MF.INT$category)
+#scoring sig enriched terms by numDEInCat
+scores.MF <- setNames(LAR.MF.INT$numDEInCat, LAR.MF.INT$category)
+scores.MF <- scores.MF[names(scores.MF) %in% rownames(simMatrix.MF)]
 
 #reducing sig enriched terms to higher order parent terms and grouping them together by a threshold value
-#and weighting them by scores of pvalue
+#and weighting them by scores
 #higher thresholds result in fewer groups
-reducedTerms.MF.LAR <- reduceSimMatrix(simMatrix,
-                                scores,
+reducedTerms.MF.LAR <- reduceSimMatrix(simMatrix.MF,
+                                scores.MF,
                                 threshold=0.9,
                                 orgdb="org.Ce.eg.db")
 colnames(reducedTerms.MF.LAR)[1] <- "category"
@@ -406,12 +435,32 @@ colnames(reducedTerms.MF.LAR)[1] <- "category"
 #calculate the number of unique parent terms
 length(unique(reducedTerms.MF.LAR$parentTerm))
 
-#list the unique parent terms
-unique(reducedTerms.MF.LAR$parentTerm)
+#list the unique parent GO IDs and parent terms
+parent.list.MF <- reducedTerms.MF.LAR |>
+  dplyr::group_by(parent, parentTerm) |>
+  dplyr::arrange(dplyr::desc(parentTerm))
+parent.list.MF
+
+#summarize parent terms by number of child GO terms, cluster size, and proportion of DEGs
+parent.summary.MF <- parent.list.MF |>
+  dplyr::summarise(
+    n_terms = dplyr::n(),
+    n_DEGs_in_parent = score[category == parent][1],
+    prop_genes = round((score[category == parent][1] / length(DEG.vector))*100,1),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(dplyr::desc(n_DEGs_in_parent))
+parent.summary.MF
+
+#identify GO terms dropped from semantic similarity reduction because they are absent from org.Ce.eg.db
+dropped.MF <- LAR.MF.INT |>
+  dplyr::filter(!category %in% rownames(simMatrix.MF)) |>
+  dplyr::select(category, term, numDEInCat, numInCat, over_represented_pvalue)
+dropped.MF
 
 #plot GO terms under their parent terms
 #pdf("figures/Figure4_MF_larval_expression.pdf", width = 18, height = 8)
-#treemapPlot(reducedTerms.MF.LAR, force.print.labels=T)
+treemapPlot(reducedTerms.MF.LAR, force.print.labels=T)
 #dev.off()
 
 #png("figures/Figure4_MF_larval_expression.png", width = 18, height = 8, units = "in", res = 300)
